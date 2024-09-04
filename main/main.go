@@ -6,7 +6,6 @@ import (
 	"github.com/containers/common/libnetwork/types"
 	"github.com/containers/podman/v5/pkg/bindings"
 	"github.com/containers/podman/v5/pkg/bindings/containers"
-	"github.com/containers/podman/v5/pkg/bindings/images"
 	"github.com/containers/podman/v5/pkg/specgen"
 	"github.com/go-redis/redis/v8"
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -20,20 +19,19 @@ import (
 
 const totalSlots = 16384
 
+var masterIDs = make([]string, 0)
+
 // 指定本地的配置文件路径
-var redisHostConfigPath string = "/Users/zhuoqun.niu/Desktop/redis/config"
+var redisHostConfigPath = "/Users/zhuoqun.niu/Desktop/redis/config"
 
 // 容器路径
-var redisConfigPath string = "/data/redis/config"
+var redisConfigPath = "/data/redis/config"
 
 // 宿主机路径
-var redisHostDataPath string = "/Users/zhuoqun.niu/Desktop/redis/data"
+var redisHostDataPath = "/Users/zhuoqun.niu/Desktop/redis/data"
 
 // 容器路径
-var redisConfigDataPath string = "/data/redis/data"
-
-// 容器唯一计数
-var count int = 1
+var redisConfigDataPath = "/data/redis/data"
 
 type ContainerInfo struct {
 	Name  string
@@ -49,22 +47,25 @@ type ClusterInfo struct {
 	Port   string
 }
 
-func createConnection() context.Context {
+var ClusterIdClusterInfoMapping = make(map[string]ClusterInfo)
+
+var IPClusterInfoMapping = make(map[string]ContainerInfo)
+
+func CreateConnection() context.Context {
 	conn, err := bindings.NewConnection(context.Background(), "unix:///Users/zhuoqun.niu/.local/share/containers/podman/machine/podman.sock")
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
-		panic(err)
+
 	}
 	return conn
 }
 
-func createContainer(conn context.Context, nodeid int) {
+func CreateContainer(conn context.Context, nodeId int) {
 	startConfigPath := filepath.Join(redisConfigPath, "redis.conf")
-	//s := specgen.NewSpecGenerator("redis:7.4.0-alpine", false)
 	s := specgen.NewSpecGenerator("myredis2", false)
 
-	s.Name = fmt.Sprintf("redis-%d", nodeid)
+	s.Name = fmt.Sprintf("redis-%d", nodeId)
 
 	s.Mounts = []specs.Mount{
 		{
@@ -122,26 +123,14 @@ func createContainer(conn context.Context, nodeid int) {
 	fmt.Println("Container started.")
 }
 
-func pullImage(ctx context.Context) {
-	//_, err := images.Pull(ctx, "redis:7.4.0-alpine", nil)
-	_, err := images.Pull(ctx, "redis:latest", nil)
-
-	if err != nil {
-		fmt.Println(err)
-		panic(err)
-		os.Exit(1)
-	}
-
-}
-
-func deleteAllContainer(ctx context.Context) {
+func DeleteAllContainer(ctx context.Context) {
 	// Stop and remove all containers
 	containerList, err := containers.List(ctx, nil)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	force_flg := true
+	forceFlg := true
 	for _, container := range containerList {
 		if container.State == "exited" {
 			// Stop the container before removing
@@ -153,7 +142,7 @@ func deleteAllContainer(ctx context.Context) {
 			fmt.Println("Container stopped:", container.ID)
 		}
 		report, err := containers.Remove(ctx, container.ID, &containers.RemoveOptions{
-			Force: &force_flg,
+			Force: &forceFlg,
 		})
 		if err != nil {
 			fmt.Println(err)
@@ -163,9 +152,7 @@ func deleteAllContainer(ctx context.Context) {
 	}
 }
 
-var iptonodeMapping = make(map[string]ContainerInfo)
-
-func getContainerIPs(ctx context.Context) ([]ContainerInfo, error) {
+func GetContainerIPs(ctx context.Context) ([]ContainerInfo, error) {
 
 	containerList, err := containers.List(ctx, nil)
 	if err != nil {
@@ -189,7 +176,7 @@ func getContainerIPs(ctx context.Context) ([]ContainerInfo, error) {
 				Port:  container.Ports[0].HostPort,
 				Id:    container.ID,
 			})
-			iptonodeMapping[network.IPAddress] = ContainerInfo{
+			IPClusterInfoMapping[network.IPAddress] = ContainerInfo{
 				Name:  container.Names[0],
 				IP:    network.IPAddress,
 				Port:  container.Ports[0].HostPort,
@@ -204,26 +191,26 @@ func getContainerIPs(ctx context.Context) ([]ContainerInfo, error) {
 	return ipArr, nil
 }
 
-func createCluster(ctx context.Context, nodeCount int) {
+func CreateCluster(ctx context.Context, nodeCount int) {
 	for i := 1; i <= nodeCount; i++ {
-		createContainer(ctx, i)
+		CreateContainer(ctx, i)
 	}
 }
 
-func StopAllContainers(ctx context.Context) {
-	containerList, err := containers.List(ctx, nil)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	for _, container := range containerList {
-		if err := containers.Stop(ctx, container.ID, nil); err != nil {
-			fmt.Println(err)
-		}
-	}
-}
+//func StopAllContainers(ctx context.Context) {
+//	containerList, err := containers.List(ctx, nil)
+//	if err != nil {
+//		fmt.Println(err)
+//		return
+//	}
+//	for _, container := range containerList {
+//		if err := containers.Stop(ctx, container.ID, nil); err != nil {
+//			fmt.Println(err)
+//		}
+//	}
+//}
 
-// 执行 redis-cli --cluster create 命令
+// CreateClient 执行 redis-cli --cluster create 命令
 func CreateClient(ip string, port uint16) (*redis.Client, context.Context) {
 	ctx := context.Background()
 	addr := fmt.Sprintf("%s:%d", ip, port)
@@ -266,9 +253,9 @@ func GetNodeIDToIPPortMapping(client *redis.Client, ctx context.Context) (map[st
 	lines := strings.Split(nodesInfo, "\n")
 	println(lines)
 	nodeMapping := make(map[string]ClusterInfo)
-	nodeIDs := []string{}
+	nodeIDs := make([]string, 0)
 	ipPortToNodeID := make(map[string]string)
-	ipList := []string{}
+	ipList := make([]string, 0)
 	for _, line := range lines {
 		if len(line) == 0 {
 			continue
@@ -333,7 +320,7 @@ func parseIPPort(ipPort string) (string, string) {
 	return "", ""
 }
 
-// 设置主从节点
+// SetMasterSlave 设置主从节点
 func SetMasterSlave(ipPortList []string, ipPortMapping map[string]string) error {
 	// 延迟确保状态同步
 
@@ -342,8 +329,8 @@ func SetMasterSlave(ipPortList []string, ipPortMapping map[string]string) error 
 	for i := 0; i < n; i++ {
 		masterID := ipPortMapping[ipPortList[i]]
 		slaveIP := strings.Split(ipPortList[i+n], ":")[0]
-		cli, ctx := CreateClient("127.0.0.1", iptonodeMapping[slaveIP].Port)
-		slaveAddr := fmt.Sprintf("localhost:%d", iptonodeMapping[slaveIP].Port)
+		cli, ctx := CreateClient("127.0.0.1", IPClusterInfoMapping[slaveIP].Port)
+		slaveAddr := fmt.Sprintf("localhost:%d", IPClusterInfoMapping[slaveIP].Port)
 		// 创建从节点的 Redis 客户端
 		println("slave:", slaveAddr)
 		println("id:", ipPortMapping[ipPortList[i+n]])
@@ -375,7 +362,7 @@ func GetMasterNodeIDs(client *redis.Client, ctx context.Context) ([]string, erro
 	for _, line := range lines {
 		println(line)
 	}
-	masterIDs := []string{}
+	masterIDs := make([]string, 0)
 
 	for _, line := range lines {
 		if len(line) == 0 {
@@ -396,49 +383,57 @@ func GetMasterNodeIDs(client *redis.Client, ctx context.Context) ([]string, erro
 	return masterIDs, nil
 }
 
-func main() {
-	// podman
-	ctx_podman := createConnection()
-	createCluster(ctx_podman, 6)
-	name_ips, _ := getContainerIPs(ctx_podman)
-	cli, cli_ctx := CreateClient(name_ips[0].IP, name_ips[0].Port)
-	MeetNodes(cli, ctx_podman, name_ips)
-	time.Sleep(2 * time.Second)
-	ip_node_mapping, ip_ports, err := GetNodeIDToIPPortMapping(cli, cli_ctx)
-	SetMasterSlave(ip_ports, ip_node_mapping)
-	idToIPPort := make(map[string]ClusterInfo)
+func AllocateSlots(cliRedis *redis.Client, ctxRedis context.Context) {
+	for i := 0; i < len(masterIDs); i++ {
+		startPoint := i * totalSlots / len(masterIDs)
+		endPoint := startPoint + totalSlots/len(masterIDs) - 1
+		masterId := masterIDs[i]
+		port := ClusterIdClusterInfoMapping[masterId].Port
+		uintPort, err := strconv.ParseUint(port, 10, 16)
+		if err != nil {
+			println(err)
+		}
+		uint16Port := uint16(uintPort)
+		cliClusterMaster, ctxClusterMaster := CreateClient("127.0.0.1", uint16Port)
+		for j := startPoint; j <= endPoint; j++ {
+			cliClusterMaster.ClusterAddSlots(ctxClusterMaster, j)
+		}
+	}
+}
 
-	for ip, node := range ip_node_mapping {
-		port := strconv.Itoa(int(iptonodeMapping[ip].Port))
-		idToIPPort[node] = ClusterInfo{
+func Process(ctxPodman context.Context) (*redis.Client, context.Context) {
+
+	CreateCluster(ctxPodman, 6)
+	nameContainerMapping, _ := GetContainerIPs(ctxPodman)
+	cliRedis, ctxRedis := CreateClient(nameContainerMapping[0].IP, nameContainerMapping[0].Port)
+	err := MeetNodes(cliRedis, ctxPodman, nameContainerMapping)
+	time.Sleep(2 * time.Second)
+	ipNodeMapping, ipPortsMapping, err := GetNodeIDToIPPortMapping(cliRedis, ctxRedis)
+	err = SetMasterSlave(ipPortsMapping, ipNodeMapping)
+	for ip, node := range ipNodeMapping {
+		port := strconv.Itoa(int(IPClusterInfoMapping[ip].Port))
+		ClusterIdClusterInfoMapping[node] = ClusterInfo{
 			NodeID: node,
 			IP:     ip,
 			Port:   port,
 		}
 
-		println(ip, iptonodeMapping[ip].Port, node)
+		println(ip, IPClusterInfoMapping[ip].Port, node)
 	}
 	time.Sleep(4 * time.Second)
-
 	if err != nil {
 		log.Fatal(err)
 	}
+	// 开始分配slots, 需要
+	masterIDs, err = GetMasterNodeIDs(cliRedis, ctxRedis)
 
-	masterIDs, err := GetMasterNodeIDs(cli, cli_ctx)
+	return cliRedis, ctxRedis
+}
 
-	for i := 0; i < len(masterIDs); i++ {
-		stratPoint := i * totalSlots / len(masterIDs)
-		endpPoint := stratPoint + totalSlots/len(masterIDs) - 1
-		masterId := masterIDs[i]
-		port := idToIPPort[masterId].Port
-		uintPort, err := strconv.ParseUint(port, 10, 16)
-		if err != nil {
-			println(err)
-		}
-		uint_16_port := uint16(uintPort)
-		cli_temp, ctx_temp := CreateClient("127.0.0.1", uint_16_port)
-		for j := stratPoint; j <= endpPoint; j++ {
-			cli_temp.ClusterAddSlots(ctx_temp, j)
-		}
-	}
+func main() {
+	ctxPodman := CreateConnection()
+	cliRedis, ctxRedis := Process(ctxPodman)
+	AllocateSlots(cliRedis, ctxRedis)
+	//defer DeleteAllContainer(ctxPodman)
+
 }
