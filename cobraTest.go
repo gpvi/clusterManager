@@ -1,5 +1,0 @@
-package redisStudy
-
-func main() {
-
-}

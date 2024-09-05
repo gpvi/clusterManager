@@ -1,4 +1,4 @@
-package main
+package utils
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"testing"
 	"time"
 )
 
@@ -63,7 +64,7 @@ func CreateConnection() context.Context {
 
 func CreateContainer(conn context.Context, nodeId int) {
 	startConfigPath := filepath.Join(redisConfigPath, "redis.conf")
-	s := specgen.NewSpecGenerator("myredis", false)
+	s := specgen.NewSpecGenerator("myredis2", false)
 
 	s.Name = fmt.Sprintf("redis-%d", nodeId)
 
@@ -371,34 +372,18 @@ func GetMasterNodeIDs(client *redis.Client, ctx context.Context) ([]string, erro
 }
 
 func AllocateSlots() {
-	println("开始将槽位分配给 Redis 主节点...")
-	numMasters := len(masterIDs)
-	if numMasters == 0 {
-		println("没有可用的主节点进行槽位分配。")
-		return
-	}
-	slotsPerMaster := totalSlots / numMasters
-	for i := 0; i < numMasters; i++ {
-		startPoint := i * slotsPerMaster
-		endPoint := startPoint + slotsPerMaster - 1
-
-		// 确保最后一个主节点处理剩余槽位
-		if i == numMasters-1 {
-			endPoint = totalSlots - 1
-		}
-
+	for i := 0; i < len(masterIDs); i++ {
+		startPoint := i * totalSlots / len(masterIDs)
+		endPoint := startPoint + totalSlots/len(masterIDs) - 1
 		masterId := masterIDs[i]
 		port := ClusterIdClusterInfoMapping[masterId].Port
 		uintPort, err := strconv.ParseUint(port, 10, 16)
 		if err != nil {
-			println("解析端口号时出错:", err)
-			continue
+			println(err)
 		}
 		uint16Port := uint16(uintPort)
-
 		cliClusterMaster, ctxClusterMaster := CreateClient("127.0.0.1", uint16Port)
 		for j := startPoint; j <= endPoint; j++ {
-			// log.Println("分配槽位", j, "到主节点", masterId)
 			cliClusterMaster.ClusterAddSlots(ctxClusterMaster, j)
 		}
 	}
@@ -432,15 +417,8 @@ func Process(ctxPodman context.Context) {
 
 }
 
-func AddNewContainerTOCLUSTER(ctx context.Context) {
-	CreateCluster(ctx, 14)
-}
-
-func main() {
+func TestProcess(t *testing.T) {
 	ctxPodman := CreateConnection()
 	Process(ctxPodman)
 	AllocateSlots()
-	AddNewContainerTOCLUSTER(ctxPodman)
-	//AddNewContainerToCluster(ctxPodman)
-	defer DeleteAllContainer(ctxPodman)
 }
