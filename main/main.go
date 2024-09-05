@@ -51,6 +51,14 @@ var ClusterIdClusterInfoMapping = make(map[string]ClusterInfo)
 
 var IPClusterInfoMapping = make(map[string]ContainerInfo)
 
+var ContainIdClusterInfoMapping = make(map[string]ContainerInfo)
+
+var AllContainerInfoList = make([]ContainerInfo, 0)
+
+var AlreadyMeetNode = make(map[string]bool)
+
+var ContainerNum = 0
+
 func CreateConnection() context.Context {
 	conn, err := bindings.NewConnection(context.Background(), "unix:///Users/zhuoqun.niu/.local/share/containers/podman/machine/podman.sock")
 	if err != nil {
@@ -62,6 +70,7 @@ func CreateConnection() context.Context {
 }
 
 func CreateContainer(conn context.Context, nodeId int) {
+	ContainerNum = ContainerNum + 1
 	startConfigPath := filepath.Join(redisConfigPath, "redis.conf")
 	s := specgen.NewSpecGenerator("myredis", false)
 
@@ -153,45 +162,43 @@ func DeleteAllContainer(ctx context.Context) {
 }
 
 func GetContainerIPs(ctx context.Context) ([]ContainerInfo, error) {
-
 	containerList, err := containers.List(ctx, nil)
 	if err != nil {
-		fmt.Println(err)
-		return nil, err
+		return nil, fmt.Errorf("failed to list containers: %w", err)
 	}
 
 	var ipArr []ContainerInfo
+
 	for _, container := range containerList {
+		if _, exist := ContainIdClusterInfoMapping[container.ID]; exist {
+			continue
+		}
+
 		inspect, err := containers.Inspect(ctx, container.ID, nil)
 		if err != nil {
-			fmt.Println(err)
+			fmt.Printf("failed to inspect container %s: %v\n", container.ID, err)
 			continue
 		}
 
 		for _, network := range inspect.NetworkSettings.Networks {
-			ipArr = append(ipArr, ContainerInfo{
+			containerNode := ContainerInfo{
 				Name:  container.Names[0],
-				IP:    "127.0.0.1",
+				IP:    "127.0.0.1", // 这个可能是占位符，如果需要可以更新
 				ConIp: network.IPAddress,
 				Port:  container.Ports[0].HostPort,
 				Id:    container.ID,
-			})
-			IPClusterInfoMapping[network.IPAddress] = ContainerInfo{
-				Name:  container.Names[0],
-				IP:    network.IPAddress,
-				Port:  container.Ports[0].HostPort,
-				ConIp: network.IPAddress,
 			}
-
+			AllContainerInfoList = append(AllContainerInfoList, containerNode)
+			ipArr = append(ipArr, containerNode)
+			IPClusterInfoMapping[network.IPAddress] = containerNode
+			ContainIdClusterInfoMapping[container.ID] = containerNode
 		}
-		//for _, info := range ipArr {
-		//	fmt.Printf("Container Name: %s, IP Address: %s\n", info.Name, info.IP)
-		//}
 	}
+
 	return ipArr, nil
 }
 
-func CreateCluster(ctx context.Context, nodeCount int) {
+func CreateClusters(ctx context.Context, nodeCount int) {
 	for i := 1; i <= nodeCount; i++ {
 		CreateContainer(ctx, i)
 	}
@@ -218,12 +225,15 @@ func CreateClient(ip string, port uint16) (*redis.Client, context.Context) {
 func MeetNodes(client *redis.Client, ctx context.Context, nodes []ContainerInfo) error {
 
 	for _, node := range nodes {
-
-		_, err := client.ClusterMeet(ctx, node.ConIp, "6379").Result()
-		if err != nil {
-			return fmt.Errorf("could not meet node %v: %v", node, err)
+		_, exist := AlreadyMeetNode[node.IP]
+		if !exist {
+			_, err := client.ClusterMeet(ctx, node.ConIp, "6379").Result()
+			if err != nil {
+				return fmt.Errorf("could not meet node %v: %v", node, err)
+			}
+			fmt.Printf("Node %v added to the cluster\n", node)
 		}
-		fmt.Printf("Node %v added to the cluster\n", node)
+
 	}
 	return nil
 }
@@ -405,11 +415,13 @@ func AllocateSlots() {
 }
 
 func Process(ctxPodman context.Context) {
-
-	CreateCluster(ctxPodman, 6)
-	nameContainerMapping, _ := GetContainerIPs(ctxPodman)
-	cliRedis, ctxRedis := CreateClient(nameContainerMapping[0].IP, nameContainerMapping[0].Port)
-	err := MeetNodes(cliRedis, ctxPodman, nameContainerMapping)
+	CreateClusters(ctxPodman, 6)
+	_, err := GetContainerIPs(ctxPodman)
+	if err != nil {
+		println(err)
+	}
+	cliRedis, ctxRedis := CreateClient(AllContainerInfoList[0].IP, AllContainerInfoList[0].Port)
+	err = MeetNodes(cliRedis, ctxPodman, AllContainerInfoList)
 	time.Sleep(2 * time.Second)
 	ipNodeMapping, ipPortsMapping, err := GetNodeIDToIPPortMapping(cliRedis, ctxRedis)
 	err = SetMasterSlave(ipPortsMapping, ipNodeMapping)
@@ -433,7 +445,20 @@ func Process(ctxPodman context.Context) {
 }
 
 func AddNewContainerTOCLUSTER(ctx context.Context) {
-	CreateCluster(ctx, 14)
+	nodeId := ContainerNum + 1
+	CreateContainer(ctx, nodeId)
+	ContainerInfoList, err := GetContainerIPs(ctx)
+	if err != nil {
+		println(err)
+	}
+	for _, node := range ContainerInfoList {
+		println(node.IP)
+	}
+	cliRedis, ctx := CreateClient(AllContainerInfoList[0].IP, AllContainerInfoList[0].Port)
+	err = MeetNodes(cliRedis, ctx, AllContainerInfoList)
+	if err != nil {
+		println(err)
+	}
 }
 
 func main() {
@@ -441,6 +466,7 @@ func main() {
 	Process(ctxPodman)
 	AllocateSlots()
 	AddNewContainerTOCLUSTER(ctxPodman)
+
 	//AddNewContainerToCluster(ctxPodman)
-	defer DeleteAllContainer(ctxPodman)
+	//defer DeleteAllContainer(ctxPodman)
 }
