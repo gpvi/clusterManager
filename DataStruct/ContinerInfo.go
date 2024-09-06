@@ -42,7 +42,7 @@ func GetContainerInfo(ctx context.Context) ([]ContainerInfo, error) {
 		for _, network := range inspect.NetworkSettings.Networks {
 			containerNode := ContainerInfo{
 				Name:  container.Names[0],
-				IP:    "127.0.0.1", // 这个可能是占位符，如果需要可以更新
+				IP:    "127.0.0.1", // 本地ip
 				ConIp: network.IPAddress,
 				Port:  container.Ports[0].HostPort,
 				Id:    container.ID,

@@ -14,7 +14,7 @@ const (
 	Slave  NodeType = "slave"
 )
 
-// ClusterInfo 结构体表示 Redis 集群中的一个节点
+// ClusterNodeInfo 结构体表示 Redis 集群中的一个节点
 /*
 ID：节点的唯一标识符。
 Address：节点的 IP 地址和端口号。
@@ -27,7 +27,7 @@ LinkState：节点的连接状态（connected 或 disconnected）。
 Slots：master 节点负责的槽范围（0-5460 等）。
 AdditionalFlags：存储其他的附加标志，例如 myself。
 */
-type ClusterInfo struct {
+type ClusterNodeInfo struct {
 	ID              string // 节点ID
 	IP              string
 	Port            uint16
@@ -42,9 +42,9 @@ type ClusterInfo struct {
 }
 
 // ParseRedisClusterNodes 解析 Redis cluster nodes 命令的输出
-func ParseRedisClusterNodes(data string) ([]ClusterInfo, error) {
+func ParseRedisClusterNodes(data string) ([]ClusterNodeInfo, error) {
 	lines := strings.Split(data, "\n")
-	var nodes []ClusterInfo
+	var nodes []ClusterNodeInfo
 	for _, line := range lines {
 		if len(line) == 0 {
 			continue
@@ -58,7 +58,7 @@ func ParseRedisClusterNodes(data string) ([]ClusterInfo, error) {
 		if err != nil {
 			println(err.Error())
 		}
-		node := ClusterInfo{
+		node := ClusterNodeInfo{
 			ID:              fields[0],
 			IP:              ip,
 			Port:            portUint16,

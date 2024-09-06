@@ -13,32 +13,16 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"redisStudy/utils"
+	"redisStudy/DataStruct"
 	"strings"
 	"time"
 )
 
-type ContainerInfo struct {
-	Name  string
-	IP    string
-	Port  uint16
-	ConIp string
-	Id    string
-}
+const totalSlots = 16384
 
-var TRUE = true
-var FALSE = false
-
-type ClusterNodeInfo struct {
-	NodeID   string
-	IP       string
-	Port     uint16
-	NodeType string
-	state    string
-}
+var True = true
 
 // 总槽数
-const totalSlots = 16384
 
 var masterIDs = make([]string, 0)
 
@@ -75,6 +59,10 @@ var MasterToSlaveMapping = make(map[*ClusterNodeInfo]*ClusterNodeInfo)
 var ContainerNum = 0
 
 var AlreadySetCluster = make(map[string]bool)
+
+type ContainerInfo DataStruct.ContainerInfo
+
+type ClusterNodeInfo DataStruct.ClusterNodeInfo
 
 func GetContainerInfo(ctx context.Context) ([]ContainerInfo, error) {
 	containerList, err := containers.List(ctx, nil)
@@ -115,50 +103,25 @@ func GetContainerInfo(ctx context.Context) ([]ContainerInfo, error) {
 func GetClusterIdToIPPortMapping(client *redis.Client, ctx context.Context) (map[string]string, []string, error) {
 	// 执行 CLUSTER NODES 命令获取集群中的所有节点信息
 	nodesInfo, err := client.ClusterNodes(ctx).Result()
+	nodes, err := DataStruct.ParseRedisClusterNodes(nodesInfo)
 	if err != nil {
 		println("failed to get cluster nodes info: %v", err)
 	}
 	// 解析返回结果，提取所有的 node ID 和对应的 IP+Port
 	lines := strings.Split(nodesInfo, "\n")
 	println(lines)
-	nodeMapping := make(map[string]ClusterNodeInfo)
+	nodeMapping := make(map[string]DataStruct.ClusterNodeInfo)
 	nodeIDs := make([]string, 0)
-	ipPortToNodeID := make(map[string]string)
+	IpToNodeID := make(map[string]string)
 	ipList := make([]string, 0)
-	for _, line := range lines {
-		if len(line) == 0 {
-			continue
-		}
 
-		fields := strings.Fields(line)
-		if len(fields) > 1 && fields[len(fields)-1] == "connected" {
-			nodeIDs = append(nodeIDs, fields[0])
-			nodeID := fields[0]
-			ipPort := fields[1]
-			// ipPort @后边是集群通信port
-			ipPort = strings.Split(ipPort, "@")[0]
-			// 此处port 为6739
-			ip, port := utils.ParseIPPort(ipPort)
-			portUint16, err := utils.StringToUint16(port)
-			if err != nil {
-				println(err)
-			}
-			NodeInfo := ClusterNodeInfo{
-				NodeID: nodeID,
-				IP:     ip,
-				Port:   portUint16,
-			}
-
-			nodeMapping[nodeID] = NodeInfo
-			AllRedisClusterList = append(AllRedisClusterList, NodeInfo)
-
-			ipList = append(ipList, ip)
-			ipPortToNodeID[ip] = nodeID
-
-		}
+	for _, node := range nodes {
+		nodeMapping[node.ID] = node
+		nodeIDs = append(nodeIDs, node.ID)
+		IpToNodeID[node.IP] = node.ID
+		ipList = append(ipList, node.IP)
 	}
-
-	return ipPortToNodeID, ipList, nil
+	return IpToNodeID, ipList, nil
 }
 
 // GetMasterNodeIDs 获取集群中所有主节点的 ID
@@ -393,7 +356,7 @@ func DeleteContainer(ctx context.Context, container types2.ListContainer) {
 		fmt.Println("Container stopped:", container.ID)
 	}
 	report, err := containers.Remove(ctx, container.ID, &containers.RemoveOptions{
-		Force: &TRUE,
+		Force: &True,
 	})
 	if err != nil {
 		fmt.Println(err)
@@ -511,9 +474,9 @@ func Process(ctxPodman context.Context) {
 	for ip, node := range ipNodeMapping {
 		port := IPToContainerInfoMapping[ip].Port
 		ClusterIdClusterInfoMapping[node] = ClusterNodeInfo{
-			NodeID: node,
-			IP:     ip,
-			Port:   port,
+			ID:   node,
+			IP:   ip,
+			Port: port,
 		}
 
 		println(ip, IPToContainerInfoMapping[ip].Port, node)
