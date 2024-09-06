@@ -7,7 +7,6 @@ require (
 	github.com/containers/podman/v5 v5.2.2
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/opencontainers/runtime-spec v1.2.0
-	github.com/spf13/cobra v1.8.1
 )
 
 require (
@@ -71,7 +70,6 @@ require (
 	github.com/gorilla/schema v1.4.1 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
-	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jinzhu/copier v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
