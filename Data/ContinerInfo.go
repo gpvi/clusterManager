@@ -1,4 +1,4 @@
-package DataStruct
+package Data
 
 import (
 	"context"
@@ -7,11 +7,13 @@ import (
 )
 
 type ContainerInfo struct {
-	Name  string
-	IP    string
-	Port  uint16
-	ConIp string
-	Id    string
+	Name    string
+	HostIP  string
+	IP      string
+	Port    uint16
+	ConIp   string
+	ConPort uint16
+	Id      string
 }
 
 var IPToContainerInfoMapping = make(map[string]ContainerInfo)

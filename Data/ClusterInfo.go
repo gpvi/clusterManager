@@ -1,4 +1,4 @@
-package DataStruct
+package Data
 
 import (
 	"fmt"
@@ -8,6 +8,11 @@ import (
 
 // NodeType 表示节点的类型，如 master 或 slave
 type NodeType string
+
+type SlotRange struct {
+	Start int
+	End   int
+}
 
 const (
 	Master NodeType = "master"
@@ -31,14 +36,35 @@ type ClusterNodeInfo struct {
 	ID              string // 节点ID
 	IP              string
 	Port            uint16
-	NodeType        NodeType // 节点类型 (master 或 slave)
-	MasterID        string   // 对于slave节点，表示主节点的ID；对于master节点则为"-"
-	PingSent        int64    // 上次发送ping的时间戳
-	PongRecv        int64    // 上次接收到pong的时间戳
-	ConfigEpoch     int64    // 节点的配置纪元 (用于实现故障转移)
-	LinkState       string   // 节点的连接状态 (connected 或 disconnected)
-	Slots           string   // 负责的插槽范围 (对master节点有效)
-	AdditionalFlags []string // 其他标志，如 myself
+	NodeType        NodeType    // 节点类型 (master 或 slave)
+	MasterID        string      // 对于slave节点，表示主节点的ID；对于master节点则为"-"
+	PingSent        int64       // 上次发送ping的时间戳
+	PongRecv        int64       // 上次接收到pong的时间戳
+	ConfigEpoch     int64       // 节点的配置纪元 (用于实现故障转移)
+	LinkState       string      // 节点的连接状态 (connected 或 disconnected)
+	Slots           []SlotRange // 负责的插槽范围 (对master节点有效)
+	AdditionalFlags []string    // 其他标志，如 myself
+}
+
+// ParseSlots 解析 Redis 节点的槽位范围
+func ParseSlots(slotStrs []string) ([]SlotRange, error) {
+	var slots []SlotRange
+	for _, slotStr := range slotStrs {
+		if strings.Contains(slotStr, "-") {
+			// 解析槽范围 (如 "0-5460")
+			parts := strings.Split(slotStr, "-")
+			var start, end int
+			fmt.Sscanf(parts[0], "%d", &start)
+			fmt.Sscanf(parts[1], "%d", &end)
+			slots = append(slots, SlotRange{Start: start, End: end})
+		} else {
+			// 单个槽 (如 "6000")
+			var singleSlot int
+			fmt.Sscanf(slotStr, "%d", &singleSlot)
+			slots = append(slots, SlotRange{Start: singleSlot, End: singleSlot})
+		}
+	}
+	return slots, nil
 }
 
 // ParseRedisClusterNodes 解析 Redis cluster nodes 命令的输出
@@ -73,9 +99,12 @@ func ParseRedisClusterNodes(data string) ([]ClusterNodeInfo, error) {
 
 		// 如果是master节点，解析它负责的插槽范围
 		if node.NodeType == Master && len(fields) > 8 {
-			node.Slots = fields[8]
+			slots, err := ParseSlots(fields[8:])
+			if err != nil {
+				return nil, err
+			}
+			node.Slots = slots
 		}
-
 		nodes = append(nodes, node)
 	}
 
@@ -110,6 +139,7 @@ func parseInt64(value string) int64 {
 }
 
 func main() {
+
 	// 示例 Redis 集群节点信息
 
 }

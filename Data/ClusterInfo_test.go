@@ -1,4 +1,4 @@
-package DataStruct
+package Data
 
 import (
 	"fmt"
@@ -6,7 +6,7 @@ import (
 )
 
 func TestName(t *testing.T) {
-	data := `147ff14ec72be84cff55a4e05b3d32e2d727da95 10.88.3.59:6379@16379 master - 0 1725596407022 3 connected 0-5460
+	data := `147ff14ec72be84cff55a4e05b3d32e2d727da95 10.88.3.59:6379@16379 master - 0 1725596407022 3 connected 0-5460 6000 7890
 c205ed8fd181f95b61d11525effdc478864c91d8 10.88.3.61:6379@16379 master - 0 1725596405004 0 connected 5461-10921
 42eecdb2638230925c8ce268c2f16f35edb20d4a 10.88.3.60:6379@16379 master - 0 1725596406012 2 connected 10922-14814
 7964bf21b2239e4c0df2663995f1333343380598 10.88.3.63:6379@16379 slave 147ff14ec72be84cff55a4e05b3d32e2d727da95 0 1725596405000 3 connected
@@ -15,12 +15,20 @@ c205ed8fd181f95b61d11525effdc478864c91d8 10.88.3.61:6379@16379 master - 0 172559
 
 	nodes, err := ParseRedisClusterNodes(data)
 	if err != nil {
-		fmt.Println("Error parsing Redis cluster nodes:", err)
-		return
+		fmt.Println("Error:", err)
 	}
 
-	// 输出解析结果
+	// 打印解析后的节点信息
 	for _, node := range nodes {
-		fmt.Printf("%+v\n", node)
+		fmt.Printf("ID: %s, IP: %s, Port: %d, Type: %s, MasterID: %s, Slots: ",
+			node.ID, node.IP, node.Port, node.NodeType, node.MasterID)
+		for _, slot := range node.Slots {
+			if slot.Start == slot.End {
+				fmt.Printf("%d ", slot.Start)
+			} else {
+				fmt.Printf("%d-%d ", slot.Start, slot.End)
+			}
+		}
+		fmt.Println()
 	}
 }
