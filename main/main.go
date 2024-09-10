@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"redisStudy/Data"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -54,6 +55,7 @@ var redisHostDataPath = "/Users/zhuoqun.niu/Desktop/redis/data"
 var redisConfigDataPath = "/data/redis/data"
 
 // Container 相关数据
+
 var IPToContainerInfoMapping = make(map[string]ContainerInfo)
 
 var AllContainerInfoList = make([]ContainerInfo, 0)
@@ -64,7 +66,6 @@ var ContainerNum = 0
 
 var ClusterIdClusterInfoMapping = make(map[string]ClusterNodeInfo)
 
-// cluster 相关
 var IPToClusterIDMapping = make(map[string]string)
 
 var AlreadyMeetNode = make(map[string]bool)
@@ -216,7 +217,10 @@ func GetMasterNodeIDs(client *redis.Client, ctx context.Context) ([]string, erro
 // CreateContainers 创建指定数量的容器
 func CreateContainers(ctx context.Context, nodeCount int) {
 	for i := 1; i <= nodeCount; i++ {
-		CreateContainer(ctx, i)
+		err := CreateContainer(ctx, i)
+		if err != nil {
+			fmt.Println(err)
+		}
 	}
 }
 
@@ -348,29 +352,42 @@ func SetNodeAsSlave(masterIP string, slaveIP string, expectedNodes int) error {
 }
 
 // SetAllMasterSlave 设置主从节点
-func SetAllMasterSlave() error {
+func SetAllMasterSlave(replica int) error {
+	var err error
 	// 计算主节点数量
-	n := len(ClusterNodeList) / 2
+	n := len(ClusterNodeList) / replica
 	expectedNodes := len(ClusterNodeList)
 
 	for i := 0; i < n; i++ {
-		// 获取主节点和从节点的 IP
+		// 获取主节点的 IP 和 ID
 		masterIP := ClusterNodeList[i].IP
-		slaveIP := ClusterNodeList[i+n].IP
-		// 记录已经设置的主从节点
 		masterID := IPToClusterIDMapping[masterIP]
-		slaveID := IPToClusterIDMapping[slaveIP]
-		AlreadySetCluster[masterID] = true
-		AlreadySetCluster[slaveID] = true
 
-		// 调用 SetNodeAsSlave 函数设置从节点
-		err := SetNodeAsSlave(masterIP, slaveIP, expectedNodes)
-		if err != nil {
-			return err
+		// 从节点的起始和结束位置
+		slaveStart := n + (i * (replica - 1))
+		slaveEnd := slaveStart + replica - 1
+
+		// 遍历设置从节点
+		for j := slaveStart; j < slaveEnd && j < expectedNodes; j++ {
+			slaveIP := ClusterNodeList[j].IP
+			slaveID := IPToClusterIDMapping[slaveIP]
+
+			// 检查是否已经设置主从节点
+			if AlreadySetCluster[masterID] || AlreadySetCluster[slaveID] {
+				continue
+			}
+			// 调用 SetNodeAsSlave 函数设置从节点
+			err = SetNodeAsSlave(masterIP, slaveIP, expectedNodes)
+			if err != nil {
+				return err
+			}
+			// 记录已经设置的主从节点
+			AlreadySetCluster[masterID] = true
+			AlreadySetCluster[slaveID] = true
 		}
 	}
 
-	return nil
+	return err
 }
 
 // MeetNodes 添加新节点到集群
@@ -479,9 +496,6 @@ func AllocateSlots(ctx context.Context) {
 
 		port := IPToContainerInfoMapping[ClusterIdClusterInfoMapping[masterId].IP].Port
 
-		if err != nil {
-			panic(err)
-		}
 		cliClusterMaster, ctxClusterMaster := CreateRedisClient("127.0.0.1", port)
 		for j := startPoint; j <= endPoint; j++ {
 			// log.Println("分配槽位", j, "到主节点", masterId)
@@ -506,12 +520,15 @@ func DataInit(ctxPodman context.Context) {
 
 // AddClusterNode 添加新节点到集群
 
-func CreateAction(ctxPodman context.Context, num int) {
+func CreateAction(ctxPodman context.Context, shared int, replica int) {
+
+	// shard >= 3
+	// replica >= 1
+	// replica == 2  一主一从
+	sum := shared * replica
 
 	DataInit(ctxPodman)
-
-	CreateContainers(ctxPodman, num)
-
+	CreateContainers(ctxPodman, sum)
 	println("操作后podmanContainer信息:")
 	println("--------------------------------------------------")
 	err := GetContainerInfo(ctxPodman)
@@ -528,14 +545,13 @@ func CreateAction(ctxPodman context.Context, num int) {
 	time.Sleep(2 * time.Second)
 
 	err = GetClusterNodesInfo(ctxRedis)
-	err = SetAllMasterSlave()
+	err = SetAllMasterSlave(replica)
 	time.Sleep(4 * time.Second)
 	if err != nil {
 		log.Fatal(err)
 	}
 	// 开始分配slots, 需要
 	masterIDs, err = GetMasterNodeIDs(cliRedis, ctxRedis)
-
 	AllocateSlots(ctxPodman)
 	err = PrintClusterNodesInfo(ctxPodman)
 	if err != nil {
@@ -563,9 +579,6 @@ func AddClusterNode(ctx context.Context) (ContainerInfo, error) {
 	}
 
 	// 创建 Redis 客户端并使节点互相发现
-	println("--------------------------------------------------")
-	log.Println("%v %v", AllContainerInfoList[0].IP, AllContainerInfoList[0].Port)
-	println("---------------------------------------------------")
 	cliRedis, ctx := CreateRedisClient(AllContainerInfoList[0].IP, AllContainerInfoList[0].Port)
 	if err := MeetNodes(cliRedis, ctx); err != nil {
 		return ContainerInfo{}, err
@@ -583,10 +596,56 @@ func AddClusterNode(ctx context.Context) (ContainerInfo, error) {
 	return newContainerNode, nil
 }
 
+func AddShaderAndReplica(ctx context.Context, replica int) {
+	err := GetClusterNodesInfo(ctx)
+	if err != nil {
+		panic(err)
+	}
+	// 创建主节点
+	masterNode, err := AddClusterNode(ctx)
+	mNode := &masterNode
+	if mNode == nil {
+		println("masterNode is nil, cannot set slaves")
+	}
+	if err != nil {
+		println("error retrieving masterNode: %v", err)
+	}
+
+	var slaveIPs []string
+
+	// 添加从节点
+	for i := 0; i < (replica - 1); i++ {
+		slaveNode, err := AddClusterNode(ctx)
+		if err != nil {
+			log.Printf(err.Error())
+		}
+		slaveIPs = append(slaveIPs, slaveNode.IP)
+	}
+	cli, ctx := CreateRedisClient(IPToContainerInfoMapping[ClusterNodeList[0].IP].IP, IPToContainerInfoMapping[ClusterNodeList[0].IP].Port)
+
+	err = MeetNodes(cli, ctx)
+	if err != nil {
+		log.Printf(err.Error())
+	}
+
+	// 设置主从关系
+	for slaveIP := range slaveIPs {
+		err = SetNodeAsSlave(masterNode.IP, slaveIPs[slaveIP], replica)
+		if err != nil {
+			log.Printf(err.Error())
+		}
+	}
+
+}
+
 func AddClusterSlave(ctx context.Context) error {
 	// 添加一个新的集群节点
 	containerNode, err := AddClusterNode(ctx)
-	newclusterNode := ClusterIdClusterInfoMapping[IPToClusterIDMapping[containerNode.ConIp]]
+	PointerContainerNode := &containerNode
+	if PointerContainerNode == nil {
+		return err
+	}
+	newClusterNode := ClusterIdClusterInfoMapping[IPToClusterIDMapping[containerNode.ConIp]]
 	if err != nil {
 		return err
 	}
@@ -596,7 +655,7 @@ func AddClusterSlave(ctx context.Context) error {
 	var minMaster string
 
 	for masterID, slaves := range MasterToSlaveMapping {
-		if len(slaves) < minSlavesOfMaster && masterID != newclusterNode.ID {
+		if len(slaves) < minSlavesOfMaster && masterID != newClusterNode.ID {
 			minSlavesOfMaster = len(slaves)
 			minMaster = masterID
 		}
@@ -635,10 +694,74 @@ func AddAction(ctx context.Context, masterNum int, slaveNum int) error {
 	return nil
 }
 
+func ExecuteClusterCommand(ctx context.Context, client *redis.Client, args ...interface{}) (string, error) {
+	result, err := client.Do(ctx, args...).Text()
+	if err != nil {
+		return "", err
+	}
+	return result, nil
+}
+
+// MigrateSlot 迁移 slot
+func MigrateSlot(ctx context.Context, slot int, sourceNodeID, destNodeID string) error {
+	err := GetClusterNodesInfo(ctx)
+	sourceNode := ClusterIdClusterInfoMapping[sourceNodeID]
+	destNode := ClusterIdClusterInfoMapping[destNodeID]
+	desCli, _ := CreateRedisClient(IPToContainerInfoMapping[destNode.IP].IP, IPToContainerInfoMapping[destNode.IP].Port)
+	sourceCli, _ := CreateRedisClient(IPToContainerInfoMapping[sourceNode.IP].IP, IPToContainerInfoMapping[sourceNode.IP].Port)
+
+	// Step 1: 设置 slot 状态为迁移中 (MIGRATING)
+	_, err = ExecuteClusterCommand(ctx, sourceCli, "CLUSTER", "SETSLOT", strconv.Itoa(slot), "MIGRATING", destNodeID)
+	if err != nil {
+		return fmt.Errorf("failed to set slot as MIGRATING: %v", err)
+	}
+	fmt.Printf("Slot %d set to MIGRATING state\n", slot)
+
+	// Step 2: 在目标节点上接收 slot (IMPORTING)
+	_, err = ExecuteClusterCommand(ctx, desCli, "cluster", "SETSLOT", strconv.Itoa(slot), "IMPORTING", destNodeID)
+	if err != nil {
+		return fmt.Errorf("failed to set slot as IMPORTING: %v", err)
+	}
+	fmt.Printf("Slot %d set to IMPORTING state on destination node\n", slot)
+
+	// Step 3: 迁移 slot 中的数据
+
+	cmdstring := sourceCli.ClusterGetKeysInSlot(ctx, slot, 1000)
+	println(cmdstring)
+	keys := cmdstring.Val()
+	port := fmt.Sprintf("%v", destNode.Port)
+	for _, key := range keys {
+		_, err := desCli.Migrate(ctx, destNode.IP, port, key, 0, 5000).Result()
+		if err != nil {
+			log.Printf("Failed to migrate key %s: %v", key, err)
+			continue
+		}
+		fmt.Printf("Migrated key: %s from slot: %d\n", key, slot)
+	}
+
+	// Step 4: 在目标节点上设置 slot 归属 (ADDSLOT)
+	_, err = ExecuteClusterCommand(ctx, desCli, "CLUSTER", "SETSLOT", strconv.Itoa(slot), "NODE", destNodeID)
+	if err != nil {
+		return fmt.Errorf("failed to set slot %d to NODE %s on destination: %v", slot, destNodeID, err)
+	}
+	fmt.Printf("Slot %d assigned to node %s\n", slot, destNodeID)
+
+	return nil
+}
+
 func main() {
 	// 首先连接podman
 	ctxPodman := CreatePodmanConnection()
-	CreateAction(ctxPodman, 6)
+	CreateAction(ctxPodman, 3, 2)
+	//DataInit(ctxPodman)
+	//err := GetClusterNodesInfo(ctxPodman)
+	//cli, _ := CreateRedisClient(IPToContainerInfoMapping[ClusterNodeList[0].IP].IP, IPToContainerInfoMapping[ClusterNodeList[0].IP].Port)
+	//err = cli.Set(ctxPodman, "slot-1000-{mTetdbLsCd}", 123, 5*time.Second).Err()
+	//fmt.Println("Key set successfully.")
+	//err = MigrateSlot(ctxPodman, 1000, ClusterNodeList[0].ID, ClusterNodeList[1].ID)
+	//if err != nil {
+	//	println(err)
+	//}
 	//err := AddAction(ctxPodman, 0, 5)
 	//if err != nil {
 	//	log.Fatal(err)
@@ -653,6 +776,5 @@ func main() {
 	//for k, v := range masterSet {
 	//	log.Println(k, v)
 	//}
-
-	//defer DeleteAllContainers(ctxPodman)
+	defer DeleteAllContainers(ctxPodman)
 }
