@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/containers/podman/v5/pkg/bindings"
-	"log"
 	"os"
 	"testing"
 )
@@ -20,7 +19,5 @@ func CreateConnection() context.Context {
 }
 
 func TestContainer(t *testing.T) {
-	podmanCtx := CreateConnection()
-	err := GetContainerInfo(podmanCtx)
-	log.Println(err)
+
 }

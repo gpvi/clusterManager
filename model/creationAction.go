@@ -1,4 +1,4 @@
-package main
+package model
 
 import (
 	"context"
@@ -12,8 +12,10 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"time"
 )
+
+var cliRedis *redis.Client
+var ctxRedis context.Context
 
 // CreateContainers 创建指定数量的容器
 func CreateContainers(ctx context.Context, nodeCount int) {
@@ -117,43 +119,69 @@ func CreateRedisClient(ip string, port uint16) (*redis.Client, context.Context) 
 
 	return client, ctx
 }
-func CreateAction(shared int, replica int) {
+func CreateAction(shared int, replica int) error {
 	ctxPodman := CreatePodmanConnection()
-	// shard >= 3
-	// replica >= 1
-	// replica == 2  一主一从
 	sum := shared * replica
+	_, _, err := DataInit()
+	if err != nil {
+		log.Printf("数据初始化失败 %v", err)
+	}
 
-	DataInit()
 	CreateContainers(ctxPodman, sum)
-	println("操作后podmanContainer信息:")
-	println("--------------------------------------------------")
-	err := GetContainerInfo(ctxPodman)
-	println("--------------------------------------------------")
+	containerInfo, err := GetContainersInfo(ctxPodman)
 	if err != nil {
-		println(err)
+		return err
 	}
-	cliRedis, ctxRedis := CreateRedisClient(AllContainerInfoList[0].IP, AllContainerInfoList[0].Port)
-	println("执行Meet操作：")
-	println("--------------------------------------------------")
-	err = MeetNodes(cliRedis, ctxPodman)
-	println("--------------------------------------------------")
-	println("等待更新节点状态中......")
+	if containerInfo == nil {
+		return fmt.Errorf("容器信息为空，容器创建失败")
+	}
 
-	time.Sleep(3 * time.Second)
+	log.Printf("完成集群容器创建共 %d 个sharder,规格为 %d 个replica", shared, replica)
+	println("容器信息如下：")
 
-	err = GetClusterNodesInfo(ctxRedis)
+	for _, node := range containerInfo.AllContainerInfoList {
+		println("容器名: ", node.Name, "容器ID: ", node.Id, "容器宿主地址: ", node.IP, "容器映射端口:", node.Port, "容器IP:", node.ConIp, "容器端口: ", node.ConPort)
+	}
+	// 创建redis client
+	if len(containerInfo.AllContainerInfoList) > 0 {
+		cliRedis, ctxRedis = CreateRedisClient(containerInfo.AllContainerInfoList[0].IP, containerInfo.AllContainerInfoList[0].Port)
+		// 用匿名函数处理 defer 中的错误
+		defer func() {
+			if err := cliRedis.Close(); err != nil {
+				fmt.Printf("Error closing Redis client: %v\n", err)
+			}
+		}()
+		// 进行其他 Redis 操作
+	} else {
+		// 处理容器列表为空的情况
+		fmt.Println("No containers available.")
+	}
+	println("开始执行Meet操作...")
+	err = MeetNodes(cliRedis, ctxPodman, containerInfo)
+	println("更新节点状态...")
+
+	// 获取集群信息
+	err = GetClusterNodesInfo(ctxPodman)
+	if err != nil {
+		log.Printf("获取集群信息失败: %v", err)
+	}
+
 	err = SetAllMasterSlave(replica)
-
-	println("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-	time.Sleep(4 * time.Second)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("设置节点为master/slave失败: %v", err)
 	}
-	AllocateSlots(ctxPodman)
+	err = GetClusterNodesInfo(ctxPodman)
+	if err != nil {
+		log.Printf("获取集群信息失败: %v", err)
+	}
+	err = AllocateSlots(ctxPodman)
+	if err != nil {
+		return fmt.Errorf("分配slots失败:%v", err)
+	}
+
 	err = PrintClusterNodesInfo(ctxPodman)
 	if err != nil {
-		println(err)
+		return fmt.Errorf("打印集群信息失败: %v", err)
 	}
-
+	return err
 }

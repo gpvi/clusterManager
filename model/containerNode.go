@@ -1,6 +1,6 @@
 package model
 
-type ContainerInfo struct {
+type ContainerNode struct {
 	Name    string
 	HostIP  string
 	IP      string
@@ -10,18 +10,13 @@ type ContainerInfo struct {
 	Id      string
 }
 
-var IPToContainerInfoMapping = make(map[string]ContainerInfo)
-var ContainerNum = 0
-var ContainIdToClusterInfoMapping = make(map[string]ContainerInfo)
-var AllContainerInfoList = make([]ContainerInfo, 0)
-
 //
-//func GetContainerInfo(ctx context.Context) ([]ContainerInfo, error) {
+//func GetContainersInfo(ctx context.Context) ([]ContainerNode, error) {
 //	containerList, err := containers.List(ctx, nil)
 //	if err != nil {
 //		return nil, fmt.Errorf("failed to list containers: %w", err)
 //	}
-//	var ipArr []ContainerInfo
+//	var ipArr []ContainerNode
 //	ContainerNum += len(containerList)
 //	for _, container := range containerList {
 //		// 计数当前容器数量
@@ -37,7 +32,7 @@ var AllContainerInfoList = make([]ContainerInfo, 0)
 //		}
 //
 //		for _, network := range inspect.NetworkSettings.Networks {
-//			containerNode := ContainerInfo{
+//			containerNode := ContainerNode{
 //				Name:  container.Names[0],
 //				IP:    "127.0.0.1", // 本地ip
 //				ConIp: network.IPAddress,

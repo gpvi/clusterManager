@@ -13,11 +13,12 @@ type Cluster struct {
 
 // MigrateSlot 迁移 slot
 func MigrateSlot(ctx context.Context, slot int, sourceNodeID, destNodeID string) error {
-	err := GetClusterNodesInfo(ctx)
+	containerInfo, err := GetContainersInfo(ctx)
+	err = GetClusterNodesInfo(ctx)
 	sourceNode := ClusterIdClusterInfoMapping[sourceNodeID]
 	destNode := ClusterIdClusterInfoMapping[destNodeID]
-	desCli, _ := CreateRedisClient(IPToContainerInfoMapping[destNode.IP].IP, IPToContainerInfoMapping[destNode.IP].Port)
-	sourceCli, _ := CreateRedisClient(IPToContainerInfoMapping[sourceNode.IP].IP, IPToContainerInfoMapping[sourceNode.IP].Port)
+	desCli, _ := CreateRedisClient(containerInfo.IPToContainerInfoMapping[destNode.IP].IP, containerInfo.IPToContainerInfoMapping[destNode.IP].Port)
+	sourceCli, _ := CreateRedisClient(containerInfo.IDToContainerNodeMapping[sourceNode.IP].IP, containerInfo.IPToContainerInfoMapping[sourceNode.IP].Port)
 
 	// Step 1: 设置 slot 状态为迁移中 (MIGRATING)
 	_, err = ExecuteClusterCommand(ctx, sourceCli, "CLUSTER", "SETSLOT", strconv.Itoa(slot), "MIGRATING", destNodeID)

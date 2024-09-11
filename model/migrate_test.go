@@ -5,7 +5,7 @@ import (
 )
 
 func TestMigrateSlot(t *testing.T) {
-	ctx, err := DataInit()
+	ctx, _, err := DataInit()
 	formId := masterIDs[0]
 	toId := masterIDs[1]
 	slotID := 1000
@@ -16,7 +16,7 @@ func TestMigrateSlot(t *testing.T) {
 }
 
 func Test_Migrate_slots(t *testing.T) {
-	ctx, err := DataInit()
+	ctx, _, err := DataInit()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func Test_Migrate_slots(t *testing.T) {
 }
 
 func TestMigratesSlotsToEmptyNode(t *testing.T) {
-	ctx, err := DataInit()
+	ctx, _, err := DataInit()
 	if err != nil {
 		t.Fatal(err)
 	}
