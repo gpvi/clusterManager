@@ -1,4 +1,4 @@
-package main
+package model
 
 import (
 	"context"
@@ -8,11 +8,7 @@ import (
 )
 
 type Cluster struct {
-	ClusterIdClusterInfoMapping map[string]ClusterNodeInfo
-}
-
-func (c *Cluster) MigrateSlot(ctx context.Context, slot int, sourceNodeID, destNodeID string) error {
-	sourceNode := c.ClusterIdClusterInfoMapping[sourceNodeID]
+	ClusterIdClusterInfoMapping map[string]ClusterNode
 }
 
 // MigrateSlot 迁移 slot

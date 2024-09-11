@@ -1,9 +1,10 @@
-package Data
+package model
 
 import (
 	"context"
 	"fmt"
 	"github.com/containers/podman/v5/pkg/bindings"
+	"log"
 	"os"
 	"testing"
 )
@@ -20,8 +21,6 @@ func CreateConnection() context.Context {
 
 func TestContainer(t *testing.T) {
 	podmanCtx := CreateConnection()
-	arrs, _ := GetContainerInfo(podmanCtx)
-	for _, v := range arrs {
-		fmt.Println(v.Name)
-	}
+	err := GetContainerInfo(podmanCtx)
+	log.Println(err)
 }

@@ -1,4 +1,4 @@
-package Data
+package model
 
 import (
 	"fmt"
@@ -44,6 +44,7 @@ type ClusterNodeInfo struct {
 	LinkState       string      // 节点的连接状态 (connected 或 disconnected)
 	Slots           []SlotRange // 负责的插槽范围 (对master节点有效)
 	AdditionalFlags []string    // 其他标志，如 myself
+	SlotsNum        int
 }
 
 // ParseSlots 解析 Redis 节点的槽位范围
@@ -54,13 +55,20 @@ func ParseSlots(slotStrs []string) ([]SlotRange, error) {
 			// 解析槽范围 (如 "0-5460")
 			parts := strings.Split(slotStr, "-")
 			var start, end int
-			fmt.Sscanf(parts[0], "%d", &start)
-			fmt.Sscanf(parts[1], "%d", &end)
+			_, err := fmt.Sscanf(parts[0], "%d", &start)
+			if err != nil {
+				println(err)
+			}
+
+			_, err = fmt.Sscanf(parts[1], "%d", &end)
 			slots = append(slots, SlotRange{Start: start, End: end})
 		} else {
 			// 单个槽 (如 "6000")
 			var singleSlot int
-			fmt.Sscanf(slotStr, "%d", &singleSlot)
+			_, err := fmt.Sscanf(slotStr, "%d", &singleSlot)
+			if err != nil {
+				println(err)
+			}
 			slots = append(slots, SlotRange{Start: singleSlot, End: singleSlot})
 		}
 	}
@@ -69,6 +77,7 @@ func ParseSlots(slotStrs []string) ([]SlotRange, error) {
 
 // ParseRedisClusterNodes 解析 Redis cluster nodes 命令的输出
 func ParseRedisClusterNodes(data string) ([]ClusterNodeInfo, error) {
+
 	lines := strings.Split(data, "\n")
 	var nodes []ClusterNodeInfo
 	for _, line := range lines {
@@ -82,7 +91,7 @@ func ParseRedisClusterNodes(data string) ([]ClusterNodeInfo, error) {
 		ip, port := utils.ParseIPPort(ipPort)
 		portUint16, err := utils.StringToUint16(port)
 		if err != nil {
-			println(err.Error())
+			println(err)
 		}
 		node := ClusterNodeInfo{
 			ID:              fields[0],
@@ -107,7 +116,6 @@ func ParseRedisClusterNodes(data string) ([]ClusterNodeInfo, error) {
 		}
 		nodes = append(nodes, node)
 	}
-
 	return nodes, nil
 }
 
@@ -134,12 +142,9 @@ func parseAdditionalFlags(field string) []string {
 // parseInt64 简单的字符串转 int64
 func parseInt64(value string) int64 {
 	var result int64
-	fmt.Sscanf(value, "%d", &result)
+	_, err := fmt.Sscanf(value, "%d", &result)
+	if err != nil {
+		fmt.Printf("Error parsing int64: %v\n", err)
+	}
 	return result
-}
-
-func main() {
-
-	// 示例 Redis 集群节点信息
-
 }
