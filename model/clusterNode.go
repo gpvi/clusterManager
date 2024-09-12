@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"log"
 	"redisStudy/utils"
 	"strings"
 )
@@ -77,22 +78,32 @@ func ParseSlots(slotStrs []string) ([]SlotRange, error) {
 
 // ParseRedisClusterNodes 解析 Redis cluster nodes 命令的输出
 func ParseRedisClusterNodes(data string) ([]ClusterNode, error) {
+	lines := strings.Split(data, "\n") // 将数据按行分割
+	var nodes []ClusterNode            // 存储解析后的节点信息
 
-	lines := strings.Split(data, "\n")
-	var nodes []ClusterNode
 	for _, line := range lines {
 		if len(line) == 0 {
-			continue
+			continue // 跳过空行
 		}
 
 		fields := strings.Split(line, " ")
-		ipPort := fields[1]
-		ipPort = strings.Split(ipPort, "@")[0]
-		ip, port := utils.ParseIPPort(ipPort)
+		if len(fields) < 8 {
+			continue // 跳过字段数不够的行
+		}
+
+		// 排除状态中包含 fail 的节点
+		if strings.Contains(fields[2], "fail") {
+			continue // 如果节点包含 fail 状态，则跳过
+		}
+
+		ipPort := strings.Split(fields[1], "@")[0]
+		ip, port := utils.ParseIPPort(ipPort) // 解析 IP 和端口
 		portUint16, err := utils.StringToUint16(port)
 		if err != nil {
-			println(err)
+			log.Printf("Error parsing port: %v", err)
+			continue
 		}
+
 		node := ClusterNode{
 			ID:              fields[0],
 			IP:              ip,
@@ -106,7 +117,7 @@ func ParseRedisClusterNodes(data string) ([]ClusterNode, error) {
 			AdditionalFlags: parseAdditionalFlags(fields[2]),
 		}
 
-		// 如果是master节点，解析它负责的插槽范围
+		// 如果是master节点，并且有插槽范围，解析插槽
 		if node.NodeType == Master && len(fields) > 8 {
 			slots, err := ParseSlots(fields[8:])
 			if err != nil {
@@ -114,8 +125,10 @@ func ParseRedisClusterNodes(data string) ([]ClusterNode, error) {
 			}
 			node.Slots = slots
 		}
-		nodes = append(nodes, node)
+
+		nodes = append(nodes, node) // 将有效节点添加到结果列表中
 	}
+
 	return nodes, nil
 }
 

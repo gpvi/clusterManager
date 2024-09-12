@@ -25,46 +25,46 @@ type ContainerNode struct {
 
 // Containers 结构体存储 Podman 容器相关的信息
 type Containers struct {
-	IPToNode  map[string]ContainerNode // IP 地址到 ContainerNode 的映射
-	Num       int                      // 容器数量
-	IDToNode  map[string]ContainerNode // 容器 ID 到 ContainerNode 的映射
-	Nodes     []ContainerNode          // 所有容器的节点信息列表
+	IPToNode  map[string]*ContainerNode // IP 地址到 ContainerNode 的映射
+	Num       int                       // 容器数量
+	IDToNode  map[string]*ContainerNode // 容器 ID 到 ContainerNode 的映射
+	Nodes     []*ContainerNode          // 所有容器的节点信息列表
 	ctxPodman context.Context
 }
 
 // CreatePodmanConnection 创建连接
 
-func CreatePodmanConnection() context.Context {
+func CreatePodmanConnection() (context.Context, error) {
 	conn, err := bindings.NewConnection(context.Background(), "unix:///Users/zhuoqun.niu/.local/share/containers/podman/machine/podman.sock")
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	return conn
+	return conn, err
 }
 
 // NewContainers 构造函数，用于初始化 Containers 结构体并分配必要的内存
-func NewContainers() *Containers {
-	ctx := CreatePodmanConnection()
+func NewContainers() (*Containers, error) {
+	ctx, err := CreatePodmanConnection()
 	return &Containers{
-		IPToNode:  make(map[string]ContainerNode), // 初始化 IP 映射
-		IDToNode:  make(map[string]ContainerNode), // 初始化 ID 映射
-		Nodes:     make([]ContainerNode, 0, 10),   // 初始化容器列表并预留容量
-		Num:       0,                              // 初始容器数量为 0
+		IPToNode:  make(map[string]*ContainerNode), // 初始化 IP 映射
+		IDToNode:  make(map[string]*ContainerNode), // 初始化 ID 映射
+		Nodes:     make([]*ContainerNode, 0, 10),   // 初始化容器列表并预留容量
+		Num:       0,                               // 初始容器数量为 0
 		ctxPodman: ctx,
-	}
+	}, err
 }
 
 // AddContainerNode 添加一个新的 ContainerNode 到容器信息
-func (c *Containers) AddContainerNode(node ContainerNode) {
+func (c *Containers) AddContainerNode(node *ContainerNode) {
 	c.IPToNode[node.ConIp] = node
 	c.IDToNode[node.Id] = node
 	c.Nodes = append(c.Nodes, node)
 	c.Num = len(c.Nodes) // 更新容器数量
 }
 
-// CreateContainer 创建容器
-func CreateContainer(ctx context.Context, nodeId int) error {
+// createContainer 创建容器
+func (c *Containers) createContainer(ctx context.Context, nodeId int) error {
 	startConfigPath := filepath.Join(redisConfigPath, "redis.conf")
 	s := specgen.NewSpecGenerator("myredis", false)
 
@@ -129,8 +129,10 @@ func CreateContainer(ctx context.Context, nodeId int) error {
 
 func (c *Containers) AddContainers(ctx context.Context, nodeNum int) error {
 	var err error
-	for i := 1; i <= nodeNum; i++ {
-		err = CreateContainer(ctx, i)
+	start := c.Num + 1
+	end := c.Num + nodeNum
+	for i := start; i <= end; i++ {
+		err = c.createContainer(ctx, i)
 		if err != nil {
 			fmt.Println(err)
 		}
@@ -179,10 +181,11 @@ func (c *Containers) UpdateContainers() error {
 			}
 
 			// 将当前容器信息加入 Containers
-			c.Nodes = append(c.Nodes, containerNode)      // 添加到容器列表
-			c.IDToNode[container.ID] = containerNode      // 更新 ID 映射
-			c.IPToNode[network.IPAddress] = containerNode // 更新 IP 映射
+			c.Nodes = append(c.Nodes, &containerNode)      // 添加到容器列表
+			c.IDToNode[container.ID] = &containerNode      // 更新 ID 映射
+			c.IPToNode[network.IPAddress] = &containerNode // 更新 IP 映射
 		}
+		c.Num = containerNum
 	}
 
 	// 返回获取到的容器信息
@@ -191,7 +194,11 @@ func (c *Containers) UpdateContainers() error {
 
 // GetContainersInfoFromPodman 从 Podman 中获取所有容器的详细信息，并将其存储在 Containers 中
 func GetContainersInfoFromPodman(ctx context.Context) (*Containers, error) {
-	containerInfo := NewContainers()
+	containerInfo, err := NewContainers()
+	if containerInfo == nil || err != nil {
+		log.Println("创建容器信息实例失败 in GetContainersInfoFromPodman", err)
+		return containerInfo, err
+	}
 	// 获取当前 Podman 的容器列表
 	containerList, err := containers.List(containerInfo.ctxPodman, nil)
 	if err != nil {
@@ -231,9 +238,9 @@ func GetContainersInfoFromPodman(ctx context.Context) (*Containers, error) {
 			}
 
 			// 将当前容器信息加入 Containers
-			containerInfo.Nodes = append(containerInfo.Nodes, containerNode) // 添加到容器列表
-			containerInfo.IDToNode[container.ID] = containerNode             // 更新 ID 映射
-			containerInfo.IPToNode[network.IPAddress] = containerNode        // 更新 IP 映射
+			containerInfo.Nodes = append(containerInfo.Nodes, &containerNode) // 添加到容器列表
+			containerInfo.IDToNode[container.ID] = &containerNode             // 更新 ID 映射
+			containerInfo.IPToNode[network.IPAddress] = &containerNode        // 更新 IP 映射
 		}
 	}
 

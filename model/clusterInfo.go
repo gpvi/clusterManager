@@ -1,7 +1,6 @@
 package model
 
 import (
-	"context"
 	"fmt"
 )
 
@@ -15,18 +14,6 @@ type ClusterInfo struct {
 	ClusterNodes       []ClusterNode          // 所有节点列表
 	MasterIDs          []string               // master 节点 ID 列表
 	MasterSet          map[string]bool        // 已设置的 master 集合
-}
-
-// 构造函数
-func NewClusterInfo() *ClusterInfo {
-	return &ClusterInfo{
-		ClusterInfoMapping: make(map[string]ClusterNode),
-		IPToClusterID:      make(map[string]string),
-		AlreadyMeetNode:    make(map[string]bool),
-		MasterSlaveMapping: make(map[string][]string),
-		AlreadySetCluster:  make(map[string]bool),
-		MasterSet:          make(map[string]bool),
-	}
 }
 
 var EmptyMasterNodes = make([]ClusterNode, 0)
@@ -51,16 +38,18 @@ var masterIDs = make([]string, 0)
 
 var masterSet = make(map[string]bool)
 
-func GetClusterNodesInfo(ctx context.Context) error {
-	containerInfo, err := GetContainersInfoFromPodman(ctx)
+func GetClusterNodesInfo(containers *Containers) error {
+
+	var err error
+	err = containers.UpdateContainers()
 	if err != nil {
 		return err
 	}
-	if len(containerInfo.Nodes) == 0 {
+	if len(containers.Nodes) == 0 {
 		return fmt.Errorf("no container info found")
 	}
 	//println(containerInfo.AllContainerInfoList[0].IP, containerInfo.AllContainerInfoList[0].Port)
-	client, ctx := CreateRedisClient(containerInfo.Nodes[0].IP, containerInfo.Nodes[0].Port)
+	client, ctx := CreateRedisClient(containers.Nodes[0].IP, containers.Nodes[0].Port)
 	// 执行 CLUSTER NODES 命令获取集群中的所有节点信息
 	nodesInfo, err := client.ClusterNodes(ctx).Result()
 	nodes, err := ParseRedisClusterNodes(nodesInfo)
