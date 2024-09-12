@@ -9,13 +9,13 @@ import (
 )
 
 func PrintClusterNodesInfo(ctx context.Context) error {
-	containerInfo, err := GetContainersInfo(ctx)
+	containerInfo, err := GetContainersInfoFromPodman(ctx)
 	err = GetClusterNodesInfo(ctx)
 	if err != nil {
 		return err
 	}
 
-	client, ctxRedis := CreateRedisClient(containerInfo.AllContainerInfoList[0].IP, containerInfo.AllContainerInfoList[0].Port)
+	client, ctxRedis := CreateRedisClient(containerInfo.Nodes[0].IP, containerInfo.Nodes[0].Port)
 	ctx = ctxRedis
 	nodesInfo, err := client.ClusterNodes(ctx).Result()
 	if err != nil {
@@ -34,17 +34,17 @@ func PrintClusterNodesInfo(ctx context.Context) error {
 func SetNodeAsSlave(masterIP string, slaveIP string) error {
 	ctx := CreatePodmanConnection()
 	// 获取从节点的 IP 地址 (不带端口)
-	containerInfo, err := GetContainersInfo(ctx)
+	containerInfo, err := GetContainersInfoFromPodman(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get container info: %v", err)
 	}
 	slaveAddr := slaveIP
 	// 创建 Redis 客户端
 
-	cli, ctx := CreateRedisClient("127.0.0.1", containerInfo.IPToContainerInfoMapping[slaveAddr].Port)
+	cli, ctx := CreateRedisClient("127.0.0.1", containerInfo.IPToNode[slaveAddr].Port)
 	println("-----------------------------")
 	// 打印从节点信息
-	slaveAddrPort := fmt.Sprintf("localhost:%d", containerInfo.IPToContainerInfoMapping[slaveAddr].Port)
+	slaveAddrPort := fmt.Sprintf("localhost:%d", containerInfo.IPToNode[slaveAddr].Port)
 	println("slave:", slaveAddrPort)
 	println("id:", IPToClusterIDMapping[slaveIP])
 
@@ -117,13 +117,13 @@ func SetAllMasterSlave(replica int) error {
 			AlreadySetCluster[slaveID] = true
 		}
 	}
-	time.Sleep(2 * time.Second)
+	time.Sleep(3 * time.Second)
 	return err
 }
 
 // MeetNodes 添加新节点到集群
-func MeetNodes(client *redis.Client, ctx context.Context, info *ContainerInfo) error {
-	nodes := info.AllContainerInfoList
+func MeetNodes(client *redis.Client, ctx context.Context, info *Containers) error {
+	nodes := info.Nodes
 	for _, node := range nodes {
 		_, exist := AlreadyMeetNode[node.IP]
 		if !exist {
@@ -168,7 +168,7 @@ func WaitForClusterSync(client *redis.Client, ctx context.Context, expectedNodes
 
 // AllocateSlots 分配槽位
 func AllocateSlots(ctx context.Context) error {
-	containerInfo, err := GetContainersInfo(ctx)
+	containerInfo, err := GetContainersInfoFromPodman(ctx)
 	if err != nil {
 		return err
 	}
@@ -195,7 +195,7 @@ func AllocateSlots(ctx context.Context) error {
 		}
 		masterId := masterIDs[i]
 
-		port := containerInfo.IPToContainerInfoMapping[ClusterIdClusterInfoMapping[masterId].IP].Port
+		port := containerInfo.IPToNode[ClusterIdClusterInfoMapping[masterId].IP].Port
 
 		cliClusterMaster, ctxClusterMaster := CreateRedisClient("127.0.0.1", port)
 		for j := startPoint; j <= endPoint; j++ {
@@ -208,18 +208,18 @@ func AllocateSlots(ctx context.Context) error {
 }
 
 // DataInit 初始化数据
-func DataInit() (context.Context, *ContainerInfo, error) {
+func DataInit(containers *Containers) (context.Context, *Containers, error) {
 	// 容器信息获取
-	ctxPodman := CreatePodmanConnection()
+	ctxPodman := containers.ctxPodman
 
-	containerInfo, err := GetContainersInfo(ctxPodman)
+	err := containers.UpdateContainers()
 	if err != nil {
 		println(err)
 	}
-	if len(containerInfo.AllContainerInfoList) != 0 {
+	if len(containers.Nodes) != 0 {
 		err = GetClusterNodesInfo(ctxPodman)
 	}
-	return ctxPodman, containerInfo, err
+	return ctxPodman, containers, err
 }
 
 func ExecuteClusterCommand(ctx context.Context, client *redis.Client, args ...interface{}) (string, error) {

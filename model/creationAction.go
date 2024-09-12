@@ -3,15 +3,8 @@ package model
 import (
 	"context"
 	"fmt"
-	"github.com/containers/common/libnetwork/types"
-	"github.com/containers/podman/v5/pkg/bindings"
-	"github.com/containers/podman/v5/pkg/bindings/containers"
-	"github.com/containers/podman/v5/pkg/specgen"
 	"github.com/go-redis/redis/v8"
-	"github.com/opencontainers/runtime-spec/specs-go"
 	"log"
-	"os"
-	"path/filepath"
 )
 
 var cliRedis *redis.Client
@@ -25,81 +18,6 @@ func CreateContainers(ctx context.Context, nodeCount int) {
 			fmt.Println(err)
 		}
 	}
-}
-
-// CreatePodmanConnection 创建连接
-func CreatePodmanConnection() context.Context {
-	conn, err := bindings.NewConnection(context.Background(), "unix:///Users/zhuoqun.niu/.local/share/containers/podman/machine/podman.sock")
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-	return conn
-}
-
-// CreateContainer 创建容器
-func CreateContainer(ctx context.Context, nodeId int) error {
-	startConfigPath := filepath.Join(redisConfigPath, "redis.conf")
-
-	s := specgen.NewSpecGenerator("myredis", false)
-
-	s.Name = fmt.Sprintf("redis-%d", nodeId)
-
-	s.Mounts = []specs.Mount{
-		{
-			Source:      redisHostConfigPath,
-			Destination: redisConfigPath,
-			Type:        "bind",
-			Options:     []string{"ro"},
-		},
-		{
-			Source:      redisHostDataPath,
-			Destination: redisConfigDataPath,
-			Type:        "bind",
-			Options:     []string{"ro"},
-		},
-	}
-
-	s.Labels = map[string]string{
-		"cluster": "cluster1",
-		"env":     "prod",
-	}
-
-	s.PortMappings = []types.PortMapping{
-		{
-			ContainerPort: 6379,
-			HostPort:      0, // Redis server port, 0 indicates a random host port should be chosen
-			Protocol:      "tcp",
-		},
-		{
-			ContainerPort: 6379, // cluster-announce-port, same as Redis server port
-			HostPort:      0,    // Random host port
-			Protocol:      "tcp",
-		},
-		{
-			ContainerPort: 16379, // cluster-announce-bus-port (Redis Cluster bus port)
-			HostPort:      0,     // Random host port
-			Protocol:      "tcp",
-		},
-	}
-
-	s.Command = []string{"redis-server", startConfigPath}
-
-	createResponse, err := containers.CreateWithSpec(ctx, s, nil)
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-
-	//fmt.Println("Container created:", createResponse.ID)
-
-	if err := containers.Start(ctx, createResponse.ID, nil); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-
-	//fmt.Println("Container started.")
-	return err
 }
 
 // CreateRedisClient 执行 redis-cli --cluster create 命令
@@ -120,15 +38,22 @@ func CreateRedisClient(ip string, port uint16) (*redis.Client, context.Context) 
 	return client, ctx
 }
 func CreateAction(shared int, replica int) error {
-	ctxPodman := CreatePodmanConnection()
+	var err error
+	containers := NewContainers()
+	ctxPodman := containers.ctxPodman
 	sum := shared * replica
-	_, _, err := DataInit()
+	_, _, err = DataInit(containers)
+
 	if err != nil {
 		log.Printf("数据初始化失败 %v", err)
 	}
+	err = containers.AddContainers(ctxPodman, sum)
+	if err != nil {
+		log.Printf("容器创建失败 %v", err)
+	}
 
-	CreateContainers(ctxPodman, sum)
-	containerInfo, err := GetContainersInfo(ctxPodman)
+	//CreateContainers(ctxPodman, sum)
+	containerInfo, err := GetContainersInfoFromPodman(ctxPodman)
 	if err != nil {
 		return err
 	}
@@ -139,12 +64,12 @@ func CreateAction(shared int, replica int) error {
 	log.Printf("完成集群容器创建共 %d 个sharder,规格为 %d 个replica", shared, replica)
 	println("容器信息如下：")
 
-	for _, node := range containerInfo.AllContainerInfoList {
+	for _, node := range containerInfo.Nodes {
 		println("容器名: ", node.Name, "容器ID: ", node.Id, "容器宿主地址: ", node.IP, "容器映射端口:", node.Port, "容器IP:", node.ConIp, "容器端口: ", node.ConPort)
 	}
 	// 创建redis client
-	if len(containerInfo.AllContainerInfoList) > 0 {
-		cliRedis, ctxRedis = CreateRedisClient(containerInfo.AllContainerInfoList[0].IP, containerInfo.AllContainerInfoList[0].Port)
+	if len(containerInfo.Nodes) > 0 {
+		cliRedis, ctxRedis = CreateRedisClient(containerInfo.Nodes[0].IP, containerInfo.Nodes[0].Port)
 		// 用匿名函数处理 defer 中的错误
 		defer func() {
 			if err := cliRedis.Close(); err != nil {
@@ -170,6 +95,7 @@ func CreateAction(shared int, replica int) error {
 	if err != nil {
 		log.Printf("设置节点为master/slave失败: %v", err)
 	}
+
 	err = GetClusterNodesInfo(ctxPodman)
 	if err != nil {
 		log.Printf("获取集群信息失败: %v", err)
