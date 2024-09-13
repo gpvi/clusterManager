@@ -9,7 +9,7 @@ import (
 )
 
 // MigrateSlot 迁移 slot
-func MigrateSlot(ctx context.Context, containers *Containers, cluster *Cluster, slot int, sourceNodeID, destNodeID string) error {
+func MigrateSlot(ctx context.Context, containers *ContainersManager, cluster *ClusterManager, slot int, sourceNodeID, destNodeID string) error {
 	var err error
 	sourceNode := cluster.IDToClusterNode[sourceNodeID]
 	destNode := cluster.IDToClusterNode[destNodeID]
@@ -62,7 +62,7 @@ func MigrateSlot(ctx context.Context, containers *Containers, cluster *Cluster, 
 	return nil
 }
 
-func MigratesSlotsToEmptyNode(ctx context.Context, containers *Containers, cluster *Cluster) error {
+func MigratesSlotsToEmptyNode(ctx context.Context, containers *ContainersManager, cluster *ClusterManager) error {
 	var err error
 	if err != nil {
 		log.Fatalf("Failed to update containers: %v", err)
@@ -124,30 +124,33 @@ func MigratesSlotsToEmptyNode(ctx context.Context, containers *Containers, clust
 	return err
 }
 
-func AddClusterNode(ctx context.Context, containers *Containers, cluster *Cluster) (*ContainerNode, error) {
+func AddClusterNode(ctx context.Context, containers *ContainersManager, cluster *ClusterManager) (*ContainerNode, error) {
 	// 获取初始的容器信息
 	var err error
-	err = containers.UpdateNodesInfo(ctx)
+	err = containers.UpdateAllContainersInfo(ctx)
 	if err != nil {
 		return &ContainerNode{}, err
 	}
 
-	if err := containers.AddContainers(ctx, 1); err != nil {
+	if err := containers.CreateContainers(ctx, 1); err != nil {
 		return &ContainerNode{}, err
 	}
 
 	// 获取更新后的容器信息
-	err = containers.UpdateNodesInfo(ctx)
+	err = containers.UpdateAllContainersInfo(ctx)
 	if err != nil {
 		return &ContainerNode{}, err
 	}
 
 	// 创建 Redis 客户端并使节点互相发现
-	cliRedis := CreateRedisClient(ctx, containers.Nodes[0].HostIP, containers.Nodes[0].HostPort)
+	cliRedis, err := containers.Nodes[0].CreateRedisClient(ctx)
+	if err != nil {
+		return &ContainerNode{}, fmt.Errorf("create redis client fail")
+	}
 	defer func() {
 		err = cliRedis.Close()
 		if err != nil {
-			log.Printf("Redsi 关闭连接失败%v", err)
+			log.Printf("Redsi %v", err)
 		}
 	}()
 
@@ -156,7 +159,7 @@ func AddClusterNode(ctx context.Context, containers *Containers, cluster *Cluste
 	}
 
 	// 获取更新后的集群节点信息
-	err = containers.UpdateNodesInfo(ctx)
+	err = containers.UpdateAllContainersInfo(ctx)
 	if err != nil {
 		return &ContainerNode{}, err
 	}
@@ -167,21 +170,21 @@ func AddClusterNode(ctx context.Context, containers *Containers, cluster *Cluste
 	return newContainerNode, nil
 }
 
-func AddShaderAndReplica(ctx context.Context, containers *Containers, cluster *Cluster, replica int) (string, error) {
+func AddShaderAndReplica(ctx context.Context, containers *ContainersManager, cluster *ClusterManager, replica int) (string, error) {
 	var err error
-	err = containers.UpdateNodesInfo(ctx)
+	err = containers.UpdateAllContainersInfo(ctx)
 	if err != nil {
 		return "", fmt.Errorf(err.Error())
 	}
-	ctx, err = cluster.UpdateClusterNodesInfo(ctx, containers, containers.Nodes[0])
+	ctx, err = cluster.UpdateClusterNodes(ctx, containers, containers.Nodes[0])
 	if err != nil {
 		return "", fmt.Errorf(err.Error())
 	}
 	if len(containers.Nodes) == 0 {
-		return "", fmt.Errorf("Empty Cluster  Please Create cluster first !")
+		return "", fmt.Errorf("Empty ClusterManager  Please Create cluster first !")
 	}
 
-	// 创建主节点
+	// 创建节点
 	masterNode, err := AddClusterNode(ctx, containers, cluster)
 	mNode := &masterNode
 	if mNode == nil {
@@ -207,7 +210,6 @@ func AddShaderAndReplica(ctx context.Context, containers *Containers, cluster *C
 	// 设置主从关系
 	for _, slaveIP := range slaveIPs {
 		ctx, err = SetNodeAsSlave(ctx, containers, cluster, masterNode.ConIp, slaveIP)
-		time.Sleep(1 * time.Second)
 		if err != nil {
 			return "", fmt.Errorf(err.Error())
 		}
@@ -215,12 +217,8 @@ func AddShaderAndReplica(ctx context.Context, containers *Containers, cluster *C
 	return masterNode.ID, err
 }
 
-func AddAction(ctx context.Context, containers *Containers, cluster *Cluster, masterNum int, replica int) error {
-	containers, err := NewContainers(ctx)
-	if err != nil {
-		return err
-	}
-
+func ScaleCluster(ctx context.Context, containers *ContainersManager, cluster *ClusterManager, masterNum int, replica int) error {
+	var err error
 	for i := 0; i < masterNum; i++ {
 		_, err := AddShaderAndReplica(ctx, containers, cluster, replica)
 		if err != nil {
@@ -228,12 +226,11 @@ func AddAction(ctx context.Context, containers *Containers, cluster *Cluster, ma
 		}
 	}
 
-	err = containers.UpdateNodesInfo(ctx)
+	err = containers.UpdateAllContainersInfo(ctx)
 	if err != nil {
 		return err
 	}
-	time.Sleep(8 * time.Second)
-	ctx, err = cluster.UpdateClusterNodesInfo(ctx, containers, containers.Nodes[0])
+	ctx, err = cluster.UpdateClusterNodes(ctx, containers, containers.Nodes[0])
 	if err != nil {
 		return err
 	}

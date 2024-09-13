@@ -73,7 +73,7 @@ func main() {
 	// 首先连接podman
 	//ctxPodman := CreatePodmanConnection()
 	//CreateAction(3, 2)
-	//err := UpdateClusterNodesInfo(ctxPodman)
+	//err := UpdateClusterNodes(ctxPodman)
 	//if err != nil {
 	//	log.Fatal(err)
 	//}

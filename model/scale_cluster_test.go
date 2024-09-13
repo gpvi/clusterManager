@@ -69,14 +69,18 @@ import (
 //	}
 func TestAddAction(t *testing.T) {
 	ctx := context.Background()
-	containers, err := NewContainers(ctx)
+	ctx, err := CreatePodmanConnection(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cluster := NewCluster()
-	err = AddAction(ctx, containers, cluster, 1, 2)
+	containers, err := NewContainersManager(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cluster := NewClusterManager()
+	err = ScaleCluster(ctx, containers, cluster, 1, 2)
 
 	if err != nil {
-		t.Errorf("AddAction() error = %v", err)
+		t.Errorf("ScaleCluster() error = %v", err)
 	}
 }
