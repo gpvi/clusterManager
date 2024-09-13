@@ -7,68 +7,82 @@ import (
 	"github.com/containers/podman/v5/pkg/bindings"
 	"github.com/containers/podman/v5/pkg/bindings/containers"
 	"github.com/containers/podman/v5/pkg/specgen"
+	"github.com/go-redis/redis/v8"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 type ContainerNode struct {
-	Name    string
-	HostIP  string
-	IP      string
-	Port    uint16
-	ConIp   string
-	ConPort uint16
-	Id      string
+	Name     string
+	HostIP   string
+	HostPort uint16
+	ConIp    string
+	ConPort  uint16
+	ID       string
+}
+
+// CreateRedisClient 初始化和连接一个 Redis 客户端，如果已经存在则检查是否有效。
+func (node *ContainerNode) CreateRedisClient(ctx context.Context) (*redis.Client, error) {
+	// 创建一个新的 Redis 客户端
+
+	addr := fmt.Sprintf("%s:%d", node.HostIP, node.HostPort)
+	cli := redis.NewClient(&redis.Options{
+		Addr:     addr,
+		Password: "", // 如果需要设置密码则填入
+		DB:       0,  // 默认数据库
+	})
+
+	// Ping 以验证连接
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := cli.Ping(ctx).Result()
+	if err != nil {
+		cli = nil // 如果创建失败，确保客户端为 nil
+		return nil, fmt.Errorf("failed to create Redis client for node %s: %v\n", node.ID, err)
+	}
+
+	fmt.Printf("Redis client successfully connected to node %s at %s \n", node.ID, addr)
+	return cli, nil
+}
+
+// CloseRedisClient 关闭 Redis 客户端连接。
+func (node *ContainerNode) CloseRedisClient(cli *redis.Client) error {
+	if cli != nil {
+		err := cli.Close()
+		if err != nil {
+			return fmt.Errorf("failed to close Redis client for node %s: %v", node.ID, err)
+		}
+		fmt.Printf("Redis client for node %s has been closed", node.ID)
+	}
+	return nil
 }
 
 // Containers 结构体存储 Podman 容器相关的信息
 type Containers struct {
-	IPToNode  map[string]*ContainerNode // IP 地址到 ContainerNode 的映射
-	Num       int                       // 容器数量
-	IDToNode  map[string]*ContainerNode // 容器 ID 到 ContainerNode 的映射
-	Nodes     []*ContainerNode          // 所有容器的节点信息列表
-	ctxPodman context.Context
-}
-
-// CreatePodmanConnection 创建连接
-
-func CreatePodmanConnection() (context.Context, error) {
-	conn, err := bindings.NewConnection(context.Background(), "unix:///Users/zhuoqun.niu/.local/share/containers/podman/machine/podman.sock")
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-	return conn, err
-}
-
-// NewContainers 构造函数，用于初始化 Containers 结构体并分配必要的内存
-func NewContainers() (*Containers, error) {
-	ctx, err := CreatePodmanConnection()
-	return &Containers{
-		IPToNode:  make(map[string]*ContainerNode), // 初始化 IP 映射
-		IDToNode:  make(map[string]*ContainerNode), // 初始化 ID 映射
-		Nodes:     make([]*ContainerNode, 0, 10),   // 初始化容器列表并预留容量
-		Num:       0,                               // 初始容器数量为 0
-		ctxPodman: ctx,
-	}, err
+	IPToNode map[string]*ContainerNode // IP 地址到 ContainerNode 的映射
+	Num      int                       // 容器数量
+	IDToNode map[string]*ContainerNode // 容器 ID 到 ContainerNode 的映射
+	Nodes    []*ContainerNode          // 所有容器的节点信息列表
 }
 
 // AddContainerNode 添加一个新的 ContainerNode 到容器信息
 func (c *Containers) AddContainerNode(node *ContainerNode) {
 	c.IPToNode[node.ConIp] = node
-	c.IDToNode[node.Id] = node
+	c.IDToNode[node.ID] = node
 	c.Nodes = append(c.Nodes, node)
 	c.Num = len(c.Nodes) // 更新容器数量
 }
 
-// createContainer 创建容器
-func (c *Containers) createContainer(ctx context.Context, nodeId int) error {
+// CreateContainer 创建容器
+func (c *Containers) CreateContainer(ctx context.Context, index int) error {
 	startConfigPath := filepath.Join(redisConfigPath, "redis.conf")
 	s := specgen.NewSpecGenerator("myredis", false)
 
-	s.Name = fmt.Sprintf("redis-%d", nodeId)
+	s.Name = fmt.Sprintf("redis-%d", index)
 
 	s.Mounts = []specs.Mount{
 		{
@@ -86,19 +100,13 @@ func (c *Containers) createContainer(ctx context.Context, nodeId int) error {
 	}
 
 	s.Labels = map[string]string{
-		"cluster": "cluster1",
-		"env":     "prod",
+		"env": "prod",
 	}
 
 	s.PortMappings = []types.PortMapping{
 		{
 			ContainerPort: 6379,
 			HostPort:      0, // Redis server port, 0 indicates a random host port should be chosen
-			Protocol:      "tcp",
-		},
-		{
-			ContainerPort: 6379, // cluster-announce-port, same as Redis server port
-			HostPort:      0,    // Random host port
 			Protocol:      "tcp",
 		},
 		{
@@ -112,8 +120,8 @@ func (c *Containers) createContainer(ctx context.Context, nodeId int) error {
 
 	createResponse, err := containers.CreateWithSpec(ctx, s, nil)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		fmt.Println(err) // TODO
+		return err
 	}
 
 	//fmt.Println("Container created:", createResponse.ID)
@@ -131,26 +139,44 @@ func (c *Containers) AddContainers(ctx context.Context, nodeNum int) error {
 	var err error
 	start := c.Num + 1
 	end := c.Num + nodeNum
+
 	for i := start; i <= end; i++ {
-		err = c.createContainer(ctx, i)
+		err = c.CreateContainer(ctx, i)
 		if err != nil {
 			fmt.Println(err)
 		}
 	}
+
+	// 操作验证
+	tryTimes := 10
+	failFlag := true
+	for i := 0; i < tryTimes; i++ {
+		err = c.UpdateNodesInfo(ctx)
+		if err != nil {
+			fmt.Println(err)
+		}
+		if len(c.Nodes) == end {
+			failFlag = false
+			break
+		}
+	}
+	if failFlag {
+		return fmt.Errorf("failed to add containers")
+	}
 	return err
 }
 
-func (c *Containers) UpdateContainers() error {
-	ctx := c.ctxPodman
+func (c *Containers) UpdateNodesInfo(ctx context.Context) error {
+
 	// 获取当前 Podman 的容器列表
-	containerList, err := containers.List(c.ctxPodman, nil)
+	containerList, err := containers.List(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to list containers: %w", err) // 列表获取失败时返回错误
 	}
 
 	containerNum := len(containerList) // 容器数量
 	if containerNum <= 0 {
-		log.Println("当前Podman容器数量为0.") // 容器数量为 0 时打印日志提示
+		log.Println("current containers num is 0.") // 容器数量为 0 时打印日志提示
 	}
 
 	// 遍历获取到的容器列表
@@ -172,12 +198,12 @@ func (c *Containers) UpdateContainers() error {
 		for _, network := range inspect.NetworkSettings.Networks {
 			// 创建 ContainerNode 实例，存储容器的相关信息
 			containerNode := ContainerNode{
-				Name:    container.Names[0],          // 容器名称
-				IP:      "127.0.0.1",                 // 容器本地 IP
-				ConIp:   network.IPAddress,           // 容器的网络 IP
-				Port:    container.Ports[0].HostPort, // 容器主机端口
-				Id:      container.ID,                // 容器 ID
-				ConPort: 6379,                        // 容器内部 Redis 端口（假设为 Redis 容器）
+				Name:     container.Names[0],
+				HostIP:   "127.0.0.1",
+				ConIp:    network.IPAddress,
+				HostPort: container.Ports[0].HostPort,
+				ID:       container.ID,
+				ConPort:  6379,
 			}
 
 			// 将当前容器信息加入 Containers
@@ -192,58 +218,23 @@ func (c *Containers) UpdateContainers() error {
 	return nil
 }
 
-// GetContainersInfoFromPodman 从 Podman 中获取所有容器的详细信息，并将其存储在 Containers 中
-func GetContainersInfoFromPodman(ctx context.Context) (*Containers, error) {
-	containerInfo, err := NewContainers()
-	if containerInfo == nil || err != nil {
-		log.Println("创建容器信息实例失败 in GetContainersInfoFromPodman", err)
-		return containerInfo, err
-	}
-	// 获取当前 Podman 的容器列表
-	containerList, err := containers.List(containerInfo.ctxPodman, nil)
+// CreatePodmanConnection 创建连接
+func CreatePodmanConnection(ctx context.Context) (context.Context, error) {
+	conn, err := bindings.NewConnection(ctx, "unix:///Users/zhuoqun.niu/.local/share/containers/podman/machine/podman.sock")
 	if err != nil {
-		return &Containers{}, fmt.Errorf("failed to list containers: %w", err) // 列表获取失败时返回错误
+		fmt.Println(err)
+		os.Exit(1)
 	}
+	return conn, err
+}
 
-	containerNum := len(containerList) // 容器数量
-	if containerNum <= 0 {
-		log.Println("当前Podman容器数量为0.") // 容器数量为 0 时打印日志提示
-	}
-
-	// 遍历获取到的容器列表
-	for _, container := range containerList {
-
-		// 检查当前容器是否已存在于映射中，避免重复处理
-		if _, exist := containerInfo.IDToNode[container.ID]; exist {
-			continue // 如果容器已存在，跳过该容器
-		}
-
-		// 获取容器的详细信息
-		inspect, err := containers.Inspect(ctx, container.ID, nil)
-		if err != nil {
-			fmt.Printf("failed to inspect container %s: %v\n", container.ID, err) // 检查容器失败时打印错误
-			return nil, err
-		}
-
-		// 循环遍历容器的网络设置（通常只有一个网络）
-		for _, network := range inspect.NetworkSettings.Networks {
-			// 创建 ContainerNode 实例，存储容器的相关信息
-			containerNode := ContainerNode{
-				Name:    container.Names[0],          // 容器名称
-				IP:      "127.0.0.1",                 // 容器本地 IP
-				ConIp:   network.IPAddress,           // 容器的网络 IP
-				Port:    container.Ports[0].HostPort, // 容器主机端口
-				Id:      container.ID,                // 容器 ID
-				ConPort: 6379,                        // 容器内部 Redis 端口（假设为 Redis 容器）
-			}
-
-			// 将当前容器信息加入 Containers
-			containerInfo.Nodes = append(containerInfo.Nodes, &containerNode) // 添加到容器列表
-			containerInfo.IDToNode[container.ID] = &containerNode             // 更新 ID 映射
-			containerInfo.IPToNode[network.IPAddress] = &containerNode        // 更新 IP 映射
-		}
-	}
-
-	// 返回获取到的容器信息
-	return containerInfo, nil
+// NewContainers 构造函数，用于初始化 Containers 结构体并分配必要的内存
+func NewContainers(ctx context.Context) (*Containers, error) {
+	ctx, err := CreatePodmanConnection(ctx)
+	return &Containers{
+		IPToNode: make(map[string]*ContainerNode), // 初始化 IP 映射
+		IDToNode: make(map[string]*ContainerNode), // 初始化 ID 映射
+		Nodes:    make([]*ContainerNode, 0, 10),   // 初始化容器列表并预留容量
+		Num:      0,                               // 初始容器数量为 0
+	}, err
 }

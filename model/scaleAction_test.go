@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"testing"
 )
 
@@ -67,12 +68,13 @@ import (
 //		}
 //	}
 func TestAddAction(t *testing.T) {
-
-	containers, err := NewContainers()
+	ctx := context.Background()
+	containers, err := NewContainers(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = AddAction(containers, 1, 2)
+	cluster := NewCluster()
+	err = AddAction(ctx, containers, cluster, 1, 2)
 
 	if err != nil {
 		t.Errorf("AddAction() error = %v", err)

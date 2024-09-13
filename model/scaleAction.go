@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"strconv"
@@ -8,16 +9,15 @@ import (
 )
 
 // MigrateSlot 迁移 slot
-func MigrateSlot(containers *Containers, slot int, sourceNodeID, destNodeID string) error {
+func MigrateSlot(ctx context.Context, containers *Containers, cluster *Cluster, slot int, sourceNodeID, destNodeID string) error {
 	var err error
-	ctx := containers.ctxPodman
-	sourceNode := ClusterIdClusterInfoMapping[sourceNodeID]
-	destNode := ClusterIdClusterInfoMapping[destNodeID]
-	desCli, _ := CreateRedisClient(containers.IPToNode[destNode.IP].IP, containers.IPToNode[destNode.IP].Port)
-	if _, exist := MasterToSlaveMapping[sourceNode.ID]; !exist {
+	sourceNode := cluster.IDToClusterNode[sourceNodeID]
+	destNode := cluster.IDToClusterNode[destNodeID]
+	desCli := CreateRedisClient(ctx, containers.IPToNode[destNode.IP].HostIP, containers.IPToNode[destNode.IP].HostPort)
+	if _, exist := cluster.MasterToSlave[sourceNode.ID]; !exist {
 		println(sourceNodeID)
 	}
-	sourceCli, _ := CreateRedisClient(containers.IPToNode[sourceNode.IP].IP, containers.IPToNode[sourceNode.IP].Port)
+	sourceCli := CreateRedisClient(ctx, containers.IPToNode[sourceNode.IP].HostIP, containers.IPToNode[sourceNode.IP].HostPort)
 
 	// Step 1: 设置 slot 状态为迁移中 (MIGRATING)
 	_, err = ExecuteClusterCommand(ctx, sourceCli, "CLUSTER", "SETSLOT", strconv.Itoa(slot), "MIGRATING", destNodeID)
@@ -62,23 +62,23 @@ func MigrateSlot(containers *Containers, slot int, sourceNodeID, destNodeID stri
 	return nil
 }
 
-func MigratesSlotsToEmptyNode(containers *Containers) error {
+func MigratesSlotsToEmptyNode(ctx context.Context, containers *Containers, cluster *Cluster) error {
 	var err error
 	if err != nil {
 		log.Fatalf("Failed to update containers: %v", err)
 		return err
 	}
-	if len(EmptyMasterNodes) == 0 {
+	if len(cluster.EmptyMasters) == 0 {
 		return fmt.Errorf("no Empty master")
 	}
-	newVolum := totalSlots / len(masterIDs)
+	newVolum := totalSlots / len(cluster.MasterIDs)
 	// empty master index
 	index := 0
 	if err != nil {
 		return fmt.Errorf("failed to get cluster nodes info: %v", err)
 	}
-	for _, masterID := range masterIDs {
-		masterNode := ClusterIdClusterInfoMapping[masterID]
+	for _, masterID := range cluster.MasterIDs {
+		masterNode := cluster.IDToClusterNode[masterID]
 		fromId := masterID
 		if masterNode.SlotsNum == 0 {
 			continue
@@ -88,10 +88,10 @@ func MigratesSlotsToEmptyNode(containers *Containers) error {
 				start := slot.Start
 				end := slot.End
 				// 将 slots 迁移到空的节点
-				for i := end; i >= start && index < len(EmptyMasterNodes); i-- {
+				for i := end; i >= start && index < len(cluster.EmptyMasters); i-- {
 
-					toId := EmptyMasterNodes[index].ID
-					err = MigrateSlot(containers, i, fromId, toId)
+					toId := cluster.EmptyMasters[index].ID
+					err = MigrateSlot(ctx, containers, cluster, i, fromId, toId)
 					if fromId == toId {
 						break
 					}
@@ -100,11 +100,11 @@ func MigratesSlotsToEmptyNode(containers *Containers) error {
 						log.Printf("Failed to migrate slot %d: %v", i, err)
 						return err
 					}
-					EmptyMasterNodes[index].SlotsNum++
+					cluster.EmptyMasters[index].SlotsNum++
 					masterNode.SlotsNum--
-					if EmptyMasterNodes[index].SlotsNum == newVolum {
+					if cluster.EmptyMasters[index].SlotsNum == newVolum {
 						index++
-						toId = masterIDs[index]
+						toId = cluster.MasterIDs[index]
 					}
 					if masterNode.SlotsNum == newVolum {
 						break
@@ -117,18 +117,17 @@ func MigratesSlotsToEmptyNode(containers *Containers) error {
 		}
 	}
 
-	err = PrintClusterNodesInfo(containers)
+	err = PrintClusterNodesInfo(ctx, containers, cluster)
 	if err != nil {
 		return err
 	}
 	return err
 }
 
-func AddClusterNode(containers *Containers) (*ContainerNode, error) {
+func AddClusterNode(ctx context.Context, containers *Containers, cluster *Cluster) (*ContainerNode, error) {
 	// 获取初始的容器信息
 	var err error
-	ctx := containers.ctxPodman
-	err = containers.UpdateContainers()
+	err = containers.UpdateNodesInfo(ctx)
 	if err != nil {
 		return &ContainerNode{}, err
 	}
@@ -138,21 +137,26 @@ func AddClusterNode(containers *Containers) (*ContainerNode, error) {
 	}
 
 	// 获取更新后的容器信息
-	err = containers.UpdateContainers()
+	err = containers.UpdateNodesInfo(ctx)
 	if err != nil {
 		return &ContainerNode{}, err
 	}
 
 	// 创建 Redis 客户端并使节点互相发现
-	cliRedis, ctx := CreateRedisClient(containers.Nodes[0].IP, containers.Nodes[0].Port)
-	defer cliRedis.Close()
+	cliRedis := CreateRedisClient(ctx, containers.Nodes[0].HostIP, containers.Nodes[0].HostPort)
+	defer func() {
+		err = cliRedis.Close()
+		if err != nil {
+			log.Printf("Redsi 关闭连接失败%v", err)
+		}
+	}()
 
-	if err := MeetNodes(cliRedis, ctx, containers); err != nil {
+	if err := MeetNodes(cliRedis, ctx, containers, cluster); err != nil {
 		return &ContainerNode{}, err
 	}
 
 	// 获取更新后的集群节点信息
-	err = containers.UpdateContainers()
+	err = containers.UpdateNodesInfo(ctx)
 	if err != nil {
 		return &ContainerNode{}, err
 	}
@@ -163,13 +167,13 @@ func AddClusterNode(containers *Containers) (*ContainerNode, error) {
 	return newContainerNode, nil
 }
 
-func AddShaderAndReplica(containers *Containers, replica int) (string, error) {
+func AddShaderAndReplica(ctx context.Context, containers *Containers, cluster *Cluster, replica int) (string, error) {
 	var err error
-	err = containers.UpdateContainers()
+	err = containers.UpdateNodesInfo(ctx)
 	if err != nil {
 		return "", fmt.Errorf(err.Error())
 	}
-	err = GetClusterNodesInfo(containers)
+	ctx, err = cluster.UpdateClusterNodesInfo(ctx, containers, containers.Nodes[0])
 	if err != nil {
 		return "", fmt.Errorf(err.Error())
 	}
@@ -178,7 +182,7 @@ func AddShaderAndReplica(containers *Containers, replica int) (string, error) {
 	}
 
 	// 创建主节点
-	masterNode, err := AddClusterNode(containers)
+	masterNode, err := AddClusterNode(ctx, containers, cluster)
 	mNode := &masterNode
 	if mNode == nil {
 		return "", fmt.Errorf("masterNode is nil, cannot set slaves")
@@ -191,7 +195,7 @@ func AddShaderAndReplica(containers *Containers, replica int) (string, error) {
 
 	// 添加从节点
 	for i := 0; i < (replica - 1); i++ {
-		slaveNode, err := AddClusterNode(containers)
+		slaveNode, err := AddClusterNode(ctx, containers, cluster)
 		if err != nil {
 			log.Printf(err.Error())
 		}
@@ -202,49 +206,44 @@ func AddShaderAndReplica(containers *Containers, replica int) (string, error) {
 	}
 	// 设置主从关系
 	for _, slaveIP := range slaveIPs {
-		err = SetNodeAsSlave(masterNode.ConIp, slaveIP)
+		ctx, err = SetNodeAsSlave(ctx, containers, cluster, masterNode.ConIp, slaveIP)
 		time.Sleep(1 * time.Second)
 		if err != nil {
 			return "", fmt.Errorf(err.Error())
 		}
 	}
-	return masterNode.Id, err
+	return masterNode.ID, err
 }
 
-func AddAction(containers *Containers, masterNum int, replica int) error {
-	containers, err := NewContainers()
+func AddAction(ctx context.Context, containers *Containers, cluster *Cluster, masterNum int, replica int) error {
+	containers, err := NewContainers(ctx)
 	if err != nil {
 		return err
 	}
 
-	_, err = DataInit(containers)
-
-	if err != nil {
-		println(err)
-	}
 	for i := 0; i < masterNum; i++ {
-		_, err := AddShaderAndReplica(containers, replica)
+		_, err := AddShaderAndReplica(ctx, containers, cluster, replica)
 		if err != nil {
 			return err
 		}
 	}
 
-	err = containers.UpdateContainers()
+	err = containers.UpdateNodesInfo(ctx)
 	if err != nil {
 		return err
 	}
-	time.Sleep(6 * time.Second)
-	err = GetClusterNodesInfo(containers)
+	time.Sleep(8 * time.Second)
+	ctx, err = cluster.UpdateClusterNodesInfo(ctx, containers, containers.Nodes[0])
 	if err != nil {
 		return err
 	}
 
-	err = MigratesSlotsToEmptyNode(containers)
+	err = MigratesSlotsToEmptyNode(ctx, containers, cluster)
 	if err != nil {
 		println(err)
 		return err
 	}
-	for _, node := range EmptyMasterNodes {
+	for _, node := range cluster.EmptyMasters {
 		println(node.ID)
 	}
 

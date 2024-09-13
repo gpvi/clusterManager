@@ -23,7 +23,7 @@ func StringToUint16(str string) (uint16, error) {
 	return uint16(num), nil
 }
 
-// parseIPPort 将 IP:Port 格式的字符串分割为 IP 和 Port
+// ParseIPPort 将IP:Port 格式的字符串分割为 IP 和 Port
 func ParseIPPort(ipPort string) (string, string) {
 	parts := strings.Split(ipPort, ":")
 	if len(parts) == 2 {

@@ -5,24 +5,11 @@ import (
 	"fmt"
 	"github.com/go-redis/redis/v8"
 	"log"
-	"time"
 )
 
 var cliRedis *redis.Client
 
-// CreateContainers 创建指定数量的容器
-//func CreateContainers(ctx context.Context, nodeCount int) {
-//	for i := 1; i <= nodeCount; i++ {
-//		err := createContainer(ctx, i)
-//		if err != nil {
-//			fmt.Println(err)
-//		}
-//	}
-//}
-
-// CreateRedisClient 执行 redis-cli --cluster create 命令
-func CreateRedisClient(ip string, port uint16) (*redis.Client, context.Context) {
-	ctx := context.Background()
+func CreateRedisClient(ctx context.Context, ip string, port uint16) *redis.Client {
 	addr := fmt.Sprintf("%s:%d", ip, port)
 
 	client := redis.NewClient(&redis.Options{
@@ -35,83 +22,83 @@ func CreateRedisClient(ip string, port uint16) (*redis.Client, context.Context) 
 		log.Fatalf("could not connect to Redis: %v", err)
 	}
 
-	return client, ctx
+	return client
 }
-func CreateAction(shared int, replica int) error {
+func CreateAction(ctx context.Context, shared int, replica int) (context.Context, error) {
 	var err error
-	containers, err := NewContainers()
+	// 创建container 和 cluster 对象
+	containers, err := NewContainers(ctx)
 	if err != nil {
-		return fmt.Errorf("创建containers 对象失败: %v", err)
+		return ctx, fmt.Errorf("create containers object fail: %v", err)
 	}
-	ctxPodman := containers.ctxPodman
-	sum := shared * replica
-	containers, err = DataInit(containers)
-	if err != nil {
-		log.Printf("数据初始化失败 %v", err)
-	}
+	//获取初始化容器信息
+	err = containers.UpdateNodesInfo(ctx)
+	// 判断创建操作是否合法
 	if containers.Num != 0 {
-
-		return fmt.Errorf("已经存在容器，请先删除容器再进行创建操作")
+		return ctx, fmt.Errorf("already exist containers，please operate after delete  before containers")
 	}
-	err = containers.AddContainers(ctxPodman, sum)
+	// 创建集群信息对象
+	cluster := NewCluster()
+	sum := shared * replica
+
+	err = containers.AddContainers(ctx, sum)
 	if err != nil {
-		log.Printf("容器创建失败 %v", err)
-	}
-	err = containers.UpdateContainers()
-	if err != nil {
-		return err
+		return ctx, fmt.Errorf("create container fail %v", err)
 	}
 
-	log.Printf("完成集群容器创建共 %d 个sharder,规格为 %d 个replica", shared, replica)
-	println("容器信息如下：")
+	fmt.Printf("finish created, %d sharder, %d 个replica ", shared, replica)
+	fmt.Println("containers info list：")
 
+	// 打印当前容器信息
 	for _, node := range containers.Nodes {
-		println("容器名: ", node.Name, "容器ID: ", node.Id, "容器宿主地址: ", node.IP, "容器映射端口:", node.Port, "容器IP:", node.ConIp, "容器端口: ", node.ConPort)
+		fmt.Println("containerName: ", node.Name, "containerID: ", node.ID, "HostIP: ", node.HostIP, "HostPort:", node.HostPort, "ContainerIP:", node.ConIp, "containerPort: ", node.ConPort)
 	}
 	// 创建redis client
 	if len(containers.Nodes) > 0 {
-		cliRedis, _ = CreateRedisClient(containers.Nodes[0].IP, containers.Nodes[0].Port)
-		// 用匿名函数处理 defer 中的错误
+		cliRedis, err = containers.Nodes[0].CreateRedisClient(ctx)
 		defer func() {
 			if err := cliRedis.Close(); err != nil {
 				fmt.Printf("Error closing Redis client: %v\n", err)
 			}
 		}()
-		// 进行其他 Redis 操作
+
 	} else {
 		// 处理容器列表为空的情况
 		fmt.Println("No containers available.")
 	}
-	println("开始执行Meet操作...")
-	err = MeetNodes(cliRedis, ctxPodman, containers)
-	println("更新节点状态...")
 
+	fmt.Println("开始执行Meet操作...")
+	err = MeetNodes(cliRedis, ctx, containers, cluster)
+	fmt.Println("更新节点状态...")
+	println("----------------------------------------")
 	// 获取集群信息
-	err = GetClusterNodesInfo(containers)
+	ctx, err = cluster.UpdateClusterNodesInfo(ctx, containers, containers.Nodes[0])
 	if err != nil {
-		log.Printf("获取集群信息失败: %v", err)
+		fmt.Printf("获取集群信息失败: %v", err)
+		return ctx, err
 	}
 
-	err = SetAllMasterSlave(replica)
+	// 设置主从关系
+	err = SetAllNodeType(ctx, containers, cluster, replica)
 	if err != nil {
-		log.Printf("设置节点为master/slave失败: %v", err)
+		fmt.Printf("设置节点为master/slave失败: %v", err)
+		return ctx, err
 	}
 
-	time.Sleep(3 * time.Second)
-
-	err = GetClusterNodesInfo(containers)
+	// 获取cluster信息
+	ctx, err = cluster.UpdateClusterNodesInfo(ctx, containers, containers.Nodes[0])
 	if err != nil {
-		log.Printf("获取集群信息失败: %v", err)
+		fmt.Printf("获取集群信息失败: %v", err)
+		return ctx, err
+	}
+	err = AllocateSlots(ctx, containers, cluster)
+	if err != nil {
+		return ctx, fmt.Errorf("分配slots失败:%v", err)
 	}
 
-	err = AllocateSlots(containers)
+	err = PrintClusterNodesInfo(ctx, containers, cluster)
 	if err != nil {
-		return fmt.Errorf("分配slots失败:%v", err)
+		return ctx, fmt.Errorf("打印集群信息失败: %v", err)
 	}
-
-	err = PrintClusterNodesInfo(containers)
-	if err != nil {
-		return fmt.Errorf("打印集群信息失败: %v", err)
-	}
-	return err
+	return ctx, err
 }
