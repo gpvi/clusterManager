@@ -150,13 +150,12 @@ func ParseRedisClusterNodes(data string) ([]ClusterNode, error) {
 			Port:            portUint16,
 			NodeType:        parseNodeType(fields[2]),
 			MasterID:        fields[3],
-			PingSent:        parseInt64(fields[4]),
-			PongRecv:        parseInt64(fields[5]),
-			ConfigEpoch:     parseInt64(fields[6]),
+			PingSent:        utils.ParseInt64(fields[4]),
+			PongRecv:        utils.ParseInt64(fields[5]),
+			ConfigEpoch:     utils.ParseInt64(fields[6]),
 			LinkState:       fields[7],
 			AdditionalFlags: parseAdditionalFlags(fields[2]),
 		}
-
 		// 如果是master节点，并且有插槽范围，解析插槽
 		if node.NodeType == Master && len(fields) > 8 {
 			slots, err := ParseSlots(fields[8:])
