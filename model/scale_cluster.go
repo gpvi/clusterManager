@@ -2,20 +2,63 @@ package model
 
 import (
 	"context"
+	"fmt"
+	"log"
+	"redisStudy/utils"
 )
 
-func ScaleClusterAction(ctx context.Context, masterNum int, replica int) (context.Context, error) {
+func ScaleClusterAction(ctx context.Context, masterNum int) error {
 	var err error
 
-	ctx, clusterManager := NewClusterManager(ctx, replica)
-	ctx, err = clusterManager.AddShaders(ctx, masterNum)
+	// 读取相关配置
+	var configFromFile RedisClusterConfig
+	err = utils.ReadFromJSONFile(ConfigSaveFileName, &configFromFile)
 	if err != nil {
-		return ctx, err
+		log.Fatalf("Error reading from JSON file: %s", err)
+	}
+	replica := configFromFile.Replica
+	println("replica:")
+	println(replica)
+	// 读取配置结束
+
+	//集群数据初始化开始
+	clusterManager := NewClusterManager(replica)
+	containersManager := clusterManager.containersManager
+
+	// 容器数据初始化
+	err = containersManager.UpdateAllContainersInfo(ctx)
+	if err != nil {
+		return err
+	}
+
+	if containersManager.Num == 0 {
+		return fmt.Errorf("Current Containers num is 0,please create cluster first. ")
+	}
+
+	// 集群数据初始化/
+	err = clusterManager.UpdateAfterMeet(ctx, containersManager.Nodes[0])
+	if err != nil {
+		return fmt.Errorf("init meet Info fail when add shaders %v", err)
+	}
+	err = clusterManager.UpdateAfterSetNodeRole(ctx, containersManager.Nodes[0])
+	if err != nil {
+		return fmt.Errorf("init set node role info  fail when add shader %v", err)
+	}
+	err = clusterManager.UpdateSlots(ctx, containersManager.Nodes[0])
+	if err != nil {
+		return fmt.Errorf("init slots info fail when add shader%v", err)
+	}
+	// 数据初始化结束
+	// 扩容开始
+
+	err = clusterManager.AddShaders(ctx, masterNum)
+	if err != nil {
+		return err
 	}
 
 	err = clusterManager.MigratesSlotsToEmptyNode(ctx)
 	if err != nil {
-		return ctx, err
+		return err
 	}
-	return ctx, nil
+	return nil
 }

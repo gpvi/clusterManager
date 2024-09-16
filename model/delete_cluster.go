@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"github.com/containers/podman/v5/pkg/bindings/containers"
 	types2 "github.com/containers/podman/v5/pkg/domain/entities/types"
+	"log"
+	"os"
+	"redisStudy/utils"
 )
 
 // DeleteContainer 删除容器
@@ -32,6 +35,14 @@ func DeleteContainer(ctx context.Context, container types2.ListContainer) {
 // DeleteAllContainers 删除所有容器
 func DeleteAllContainers(ctx context.Context) {
 	// Stop and remove all containers
+
+	if utils.FileExists(ConfigSaveFileName) {
+		fmt.Printf("File %s already exists, deleting...\n", ConfigSaveFileName)
+		err := os.Remove(ConfigSaveFileName) // 删除文件
+		if err != nil {
+			log.Fatalf("Error deleting file: %s", err)
+		}
+	}
 	containerList, err := containers.List(ctx, nil)
 	if err != nil {
 		fmt.Println(err)

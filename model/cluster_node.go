@@ -3,8 +3,6 @@ package model
 import (
 	"fmt"
 	"github.com/go-redis/redis/v8"
-	"log"
-	"redisStudy/utils"
 	"strconv"
 	"strings"
 )
@@ -117,76 +115,3 @@ func parseSingleSlot(slotStr string) (int, error) {
 }
 
 // ParseRedisClusterNodes 解析 Redis cluster nodes 命令的输出
-func ParseRedisClusterNodes(data string) ([]ClusterNode, error) {
-	lines := strings.Split(data, "\n") // 将数据按行分割
-	var nodes []ClusterNode            // 存储解析后的节点信息
-
-	for _, line := range lines {
-		if len(line) == 0 {
-			continue // 跳过空行
-		}
-
-		fields := strings.Split(line, " ")
-		if len(fields) < 8 {
-			continue // 跳过字段数不够的行
-		}
-
-		// 排除状态中包含 fail 的节点
-		if strings.Contains(fields[2], "fail") {
-			continue // 如果节点包含 fail 状态，则跳过
-		}
-
-		ipPort := strings.Split(fields[1], "@")[0]
-		ip, port := utils.ParseIPPort(ipPort) // 解析 IP 和端口
-		portUint16, err := utils.StringToUint16(port)
-		if err != nil {
-			log.Printf("Error parsing port: %v", err)
-			continue
-		}
-
-		node := ClusterNode{
-			ID:              fields[0],
-			IP:              ip,
-			Port:            portUint16,
-			NodeType:        parseNodeType(fields[2]),
-			MasterID:        fields[3],
-			PingSent:        utils.ParseInt64(fields[4]),
-			PongRecv:        utils.ParseInt64(fields[5]),
-			ConfigEpoch:     utils.ParseInt64(fields[6]),
-			LinkState:       fields[7],
-			AdditionalFlags: parseAdditionalFlags(fields[2]),
-		}
-		// 如果是master节点，并且有插槽范围，解析插槽
-		if node.NodeType == Master && len(fields) > 8 {
-			slots, err := ParseSlots(fields[8:])
-			if err != nil {
-				return nil, err
-			}
-			node.Slots = slots
-		}
-
-		nodes = append(nodes, node) // 将有效节点添加到结果列表中
-	}
-
-	return nodes, nil
-}
-
-// parseNodeType 解析节点类型（master 或 slave）
-func parseNodeType(field string) string {
-	if strings.Contains(field, "master") {
-		return Master
-	}
-	return Slave
-}
-
-// parseAdditionalFlags 解析其他附加标志 (如 myself)
-func parseAdditionalFlags(field string) []string {
-	flags := strings.Split(field, ",")
-	var additionalFlags []string
-	for _, flag := range flags {
-		if flag != "master" && flag != "slave" {
-			additionalFlags = append(additionalFlags, flag)
-		}
-	}
-	return additionalFlags
-}

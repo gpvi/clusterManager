@@ -1,7 +1,15 @@
 package model
 
-//func TestDeleteAllAction(t *testing.T) {
-//
-//	ctxPodman := CreatePodmanConnection()
-//	DeleteAllContainers(ctxPodman)
-//}
+import (
+	"context"
+	"testing"
+)
+
+func TestDeleteAllAction(t *testing.T) {
+	ctx := context.Background()
+	ctxPodman, err := CreatePodmanConnection(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	DeleteAllContainers(ctxPodman)
+}
