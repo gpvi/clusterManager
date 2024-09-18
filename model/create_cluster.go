@@ -56,11 +56,16 @@ func CreateClusterAction(ctx context.Context, shared int, replica int) error {
 		err := os.Remove(ConfigSaveFileName) // 删除文件
 		if err != nil {
 			log.Fatalf("Error deleting file: %s", err)
+			return err
 		}
 	}
 	err = utils.WriteToJSONFile(ConfigSaveFileName, config)
 	if err != nil {
-		log.Fatalf("Error writing to JSON file: %s", err)
+		return fmt.Errorf("error writing to JSON file %s", err)
 	}
-	return err
+	err = clusterManager.PrintClusterNodesInfo(ctx)
+	if err != nil {
+		return fmt.Errorf("print cluster nodes Info error :%v", err)
+	}
+	return nil
 }

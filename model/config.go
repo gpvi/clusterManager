@@ -16,6 +16,5 @@ var redisHostDataPath = "/Users/zhuoqun.niu/Desktop/redis/data"
 // 容器路径
 var redisConfigDataPath = "/data/redis/data"
 
+// 创建后的配置文件名
 var ConfigSaveFileName = "redis_cluster_config.json"
-
-// Container 相关数据

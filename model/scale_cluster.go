@@ -55,7 +55,7 @@ func ScaleClusterAction(ctx context.Context, masterNum int) error {
 	if err != nil {
 		return err
 	}
-
+	println("开始迁移slots ...")
 	err = clusterManager.MigratesSlotsToEmptyNode(ctx)
 	if err != nil {
 		return err

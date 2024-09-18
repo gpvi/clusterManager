@@ -13,25 +13,27 @@ import (
 	"time"
 )
 
-// ByIP implements sort.Interface for sorting ClusterNodeList by IP address.
+// ByIP 用于根据IP 排序 ClusterNode
 type ByIP []*ClusterNode
 
-func (a ByIP) Len() int           { return len(a) }
+func (a ByIP) Len() int { return len(a) }
+
 func (a ByIP) Less(i, j int) bool { return a[i].IP < a[j].IP }
-func (a ByIP) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+
+func (a ByIP) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 
 type ClusterManager struct {
-	EmptyMasters      []*ClusterNode
-	IDToClusterNode   map[string]*ClusterNode
-	IPToClusterID     map[string]string
-	AlreadyMeetNode   map[string]bool
-	MasterToSlave     map[string][]string
-	AlreadySetCluster map[string]bool
-	ClusterNodeList   []*ClusterNode
-	MasterIDs         []string
-	MasterSet         map[string]bool
-	containersManager *ContainersManager
-	Replica           int
+	EmptyMasters      []*ClusterNode          // 当前没有分配任何slot的主节点列表
+	IDToClusterNode   map[string]*ClusterNode // 将节点 ID 映射到对应的 ClusterNode 结构体
+	IPToClusterID     map[string]string       // 将 IP 地址映射到对应的集群节点 ID
+	AlreadyMeetNode   map[string]bool         // 记录已经通过 "meet" 命令连接过的节点
+	MasterToSlave     map[string][]string     // 将主节点 ID 映射到其从节点 ID 列表
+	AlreadySetCluster map[string]bool         // 记录已经被设置为集群一部分的节点
+	ClusterNodeList   []*ClusterNode          // 集群中所有节点（包括主节点和从节点）的列表
+	MasterIDs         []string                // 集群中所有主节点的 ID 列表
+	MasterSet         map[string]bool         // 主节点 ID 集合，用于快速查找
+	containersManager *ContainersManager      // 指向负责管理容器操作的 ContainersManager 指针
+	Replica           int                     // 每个主节点要分配的副本（从节点）数量
 }
 
 func NewClusterManager(replica int) *ClusterManager {
@@ -329,7 +331,7 @@ func (c *ClusterManager) SetAllNodeRole(ctx context.Context) error {
 			slaveID := c.IPToClusterID[slaveIP]
 
 			// 检查是否已经设置主从节点
-			if c.AlreadySetCluster[masterID] || c.AlreadySetCluster[slaveID] {
+			if c.AlreadySetCluster[masterID] && c.AlreadySetCluster[slaveID] {
 				continue
 			}
 			masterToSlave[masterID] = append(masterToSlave[masterID], slaveID)
@@ -494,6 +496,10 @@ func (c *ClusterManager) PrintClusterNodesInfo(ctx context.Context) error {
 	var err error
 	containersManager := c.containersManager
 	client := CreateRedisClient(ctx, containersManager.Nodes[0].HostIP, containersManager.Nodes[0].HostPort)
+	defer func() {
+		err = client.Close()
+		fmt.Println(err)
+	}()
 	nodesInfo, err := client.ClusterNodes(ctx).Result()
 	if err != nil {
 		println("failed to get cluster nodes info: %v", err)
@@ -526,7 +532,12 @@ func (c *ClusterManager) MigrateSlot(ctx context.Context, slot int, sourceNodeID
 		println(sourceNodeID)
 	}
 	sourceCli := CreateRedisClient(ctx, containersManager.IPToNode[sourceNode.IP].HostIP, containersManager.IPToNode[sourceNode.IP].HostPort)
-
+	defer func() {
+		err = desCli.Close()
+		if err != nil {
+			fmt.Printf("Redsi %v", err)
+		}
+	}()
 	// Step 1: 设置 slot 状态为迁移中 (MIGRATING)
 	_, err = utils.ExecuteClusterCommand(ctx, sourceCli, "CLUSTER", "SETSLOT", strconv.Itoa(slot), "MIGRATING", destNodeID)
 	if err != nil {
@@ -593,8 +604,8 @@ func (c *ClusterManager) MigratesSlotsToEmptyNode(ctx context.Context) error {
 		if masterNode.SlotsNum == 0 {
 			continue
 		}
-		if masterNode.SlotsNum > newVolum {
 
+		if masterNode.SlotsNum > newVolum {
 			for _, slot := range masterNode.Slots {
 				start := slot.Start
 				end := slot.End
@@ -620,7 +631,6 @@ func (c *ClusterManager) MigratesSlotsToEmptyNode(ctx context.Context) error {
 						break
 					}
 				}
-
 			}
 		}
 	}
@@ -632,7 +642,6 @@ func (c *ClusterManager) MigratesSlotsToEmptyNode(ctx context.Context) error {
 	return err
 }
 
-// 内部函数
 // sortClusterNodesByIP sorts the ClusterNodeList by IP address.
 func (c *ClusterManager) sortClusterNodesByIP(nodes []*ClusterNode) {
 	sort.Sort(ByIP(nodes))
@@ -644,7 +653,6 @@ func (c *ClusterManager) GetClusterNodes(ctx context.Context, LoginNode *Contain
 	if len(containersManager.Nodes) == 0 {
 		return nil, fmt.Errorf("no containers found")
 	}
-	//println(containerInfo.AllContainerInfoList[0].IP, containerInfo.AllContainerInfoList[0].Port)
 	client := CreateRedisClient(ctx, LoginNode.HostIP, LoginNode.HostPort)
 	defer func() {
 		err = client.Close()
@@ -670,13 +678,11 @@ func (c *ClusterManager) resetClusterData() {
 
 }
 
-// 当节点为maser 节点进行操作
+// 当节点为maser节点时进行操作
 func (c *ClusterManager) processMasterNode(node ClusterNode) {
 	c.MasterIDs = append(c.MasterIDs, node.ID)
 	c.MasterSet[node.ID] = true
 	c.MasterToSlave[node.ID] = make([]string, 0)
-
-	// Calculate the number of slots this master node holds
 	node.SlotsNum = c.calculateSlots(node.Slots)
 
 	if node.SlotsNum == 0 {
@@ -770,8 +776,8 @@ func (c *ClusterManager) verifyNodeTypeSet(ctx context.Context, masterToSlave ma
 			if ok == true {
 				break
 			}
-			fmt.Printf("try %v /10 sync fail\n", i)
-			time.Sleep(2 * time.Second)
+			fmt.Printf("%v try %v /10 sync fail\n", node.Name, i)
+			time.Sleep(3 * time.Second)
 		}
 		if i == tryTimes {
 			return false, fmt.Errorf("failed to verify node type set")

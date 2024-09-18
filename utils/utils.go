@@ -54,7 +54,7 @@ func ParseInt64(value string) int64 {
 	return result
 }
 
-// 将数据写入 JSON 文件
+// WriteToJSONFile 将数据写入 JSON 文件
 func WriteToJSONFile(fileName string, data interface{}) error {
 	// 将结构体转换为 JSON 字符串并格式化
 	jsonData, err := json.MarshalIndent(data, "", "  ")
@@ -84,7 +84,7 @@ func WriteToJSONFile(fileName string, data interface{}) error {
 	return nil
 }
 
-// 从 JSON 文件中读取数据
+// ReadFromJSONFile 从 JSON 文件中读取数据
 func ReadFromJSONFile(fileName string, data interface{}) error {
 	// 读取文件内容
 	fileData, err := os.ReadFile(fileName) // Go 1.16 后 ioutil 被弃用，改为 os.ReadFile
@@ -101,7 +101,7 @@ func ReadFromJSONFile(fileName string, data interface{}) error {
 	return nil
 }
 
-// 检测文件是否存在
+// FileExists 检测文件是否存在
 func FileExists(fileName string) bool {
 	_, err := os.Stat(fileName)
 	// 如果文件存在，err 为 nil；如果不存在，返回一个 error
