@@ -592,7 +592,7 @@ func (c *ClusterManager) MigratesSlotsToEmptyNode(ctx context.Context) error {
 		return fmt.Errorf("no Empty master")
 	}
 
-	newVolum := totalSlots / len(c.MasterIDs)
+	newV := totalSlots / len(c.MasterIDs)
 	// empty master index
 	index := 0
 	if err != nil {
@@ -605,7 +605,7 @@ func (c *ClusterManager) MigratesSlotsToEmptyNode(ctx context.Context) error {
 			continue
 		}
 
-		if masterNode.SlotsNum > newVolum {
+		if masterNode.SlotsNum > newV {
 			for _, slot := range masterNode.Slots {
 				start := slot.Start
 				end := slot.End
@@ -623,11 +623,11 @@ func (c *ClusterManager) MigratesSlotsToEmptyNode(ctx context.Context) error {
 					}
 					c.EmptyMasters[index].SlotsNum++
 					masterNode.SlotsNum--
-					if c.EmptyMasters[index].SlotsNum == newVolum {
+					if c.EmptyMasters[index].SlotsNum == newV {
 						index++
 						toId = c.MasterIDs[index]
 					}
-					if masterNode.SlotsNum == newVolum {
+					if masterNode.SlotsNum == newV {
 						break
 					}
 				}

@@ -15,7 +15,7 @@ type RedisClusterConfig struct {
 	Replica int `json:"replica"` // 副本数量
 }
 
-func CreateClusterAction(ctx context.Context, shared int, replica int) error {
+func CreateClusterAction(ctx context.Context, shard int, replica int) error {
 	var err error
 	// 创建container 和 cluster 对象
 
@@ -29,7 +29,7 @@ func CreateClusterAction(ctx context.Context, shared int, replica int) error {
 	}
 
 	// 创建节点（包括创建容器、meet）
-	err = clusterManager.CreateClusterNodes(shared, ctx)
+	err = clusterManager.CreateClusterNodes(shard, ctx)
 	if err != nil {
 		return fmt.Errorf("create clusterNodes fail: %v", err)
 	}
