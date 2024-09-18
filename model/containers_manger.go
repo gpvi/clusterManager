@@ -17,12 +17,13 @@ import (
 )
 
 type ContainerNode struct {
-	Name     string
-	HostIP   string
-	HostPort uint16
-	ConIp    string
-	ConPort  uint16
-	ID       string
+	Name        string // 容器名
+	HostIP      string // 宿主机IP(本地为127.0.0.1)
+	HostPort    uint16 // 容器redis-cli 端口在宿主机上的端口映射
+	ConIp       string //容器IP
+	ConPort     uint16 //容器redis-cli 端口
+	ID          string // 容器ID
+	ClusterName string //所属集群名
 }
 
 // CreateRedisClient 初始化和连接一个 Redis 客户端，如果已经存在则检查是否有效。
@@ -126,13 +127,13 @@ func (c *ContainersManager) CreateContainers(ctx context.Context, nodeNum int) e
 	return err
 }
 
+var ClusterName = "cluster"
+
 // CreateContainer 创建容器
 func (c *ContainersManager) CreateContainer(ctx context.Context, index int) (string, error) {
 	startConfigPath := filepath.Join(redisConfigPath, "redis.conf")
 	s := specgen.NewSpecGenerator("myredis", false)
-
-	s.Name = fmt.Sprintf("redis-%d", index)
-
+	s.Name = fmt.Sprintf("%v-redis-%d", ClusterName, index)
 	s.Mounts = []specs.Mount{
 		{
 			Source:      redisHostConfigPath,
