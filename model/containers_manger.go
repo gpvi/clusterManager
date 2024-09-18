@@ -97,7 +97,7 @@ func (c *ContainersManager) CreateContainers(ctx context.Context, nodeNum int) e
 				return fmt.Errorf("failed to inspect container %s: %v", id, err)
 			}
 			if inspect.State.Running {
-				fmt.Println("Container is running")
+				fmt.Printf("container %v is running\n", id)
 				break
 			}
 

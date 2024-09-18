@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"redisStudy/utils"
+	"time"
 )
 
 var cliRedis *redis.Client
@@ -25,7 +26,7 @@ func CreateClusterAction(ctx context.Context, shard int, replica int) error {
 	err = containersManager.GetCurContainersNum(ctx)
 	// 判断创建操作是否合法
 	if containersManager.Num != 0 {
-		return fmt.Errorf("already exist containers，please operate after delete  before containers")
+		return fmt.Errorf("already exist containers，please operate after delete  exist containers")
 	}
 
 	// 创建节点（包括创建容器、meet）
@@ -63,6 +64,7 @@ func CreateClusterAction(ctx context.Context, shard int, replica int) error {
 	if err != nil {
 		return fmt.Errorf("error writing to JSON file %s", err)
 	}
+	time.Sleep(1 * time.Second)
 	err = clusterManager.PrintClusterNodesInfo(ctx)
 	if err != nil {
 		return fmt.Errorf("print cluster nodes Info error :%v", err)
