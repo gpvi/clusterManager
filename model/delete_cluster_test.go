@@ -11,5 +11,6 @@ func TestDeleteAllAction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	DeleteAllContainers(ctxPodman)
+	clusterName := "myCluster"
+	DeleteAllContainers(ctxPodman, clusterName)
 }

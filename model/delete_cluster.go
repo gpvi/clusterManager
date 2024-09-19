@@ -33,7 +33,7 @@ func DeleteContainer(ctx context.Context, container types2.ListContainer) {
 }
 
 // DeleteAllContainers 删除所有容器
-func DeleteAllContainers(ctx context.Context) {
+func DeleteAllContainers(ctx context.Context, clusterName string) {
 	// Stop and remove all containers
 
 	if utils.FileExists(ConfigSaveFileName) {
@@ -49,7 +49,9 @@ func DeleteAllContainers(ctx context.Context) {
 		return
 	}
 	for _, container := range containerList {
-		DeleteContainer(ctx, container)
+		if container.Labels["clusterName"] == clusterName {
+			DeleteContainer(ctx, container)
+		}
 	}
 
 }

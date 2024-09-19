@@ -20,7 +20,7 @@ var scaleCmd = &cobra.Command{
 			println(e)
 
 		}
-		err = model.ScaleClusterAction(ctx, addNum)
+		err = model.ScaleClusterAction(ctx, addNum, clusterName)
 		if err != nil {
 			e := fmt.Errorf("ScaleCluster() error = %v", err)
 			println(e)
@@ -30,5 +30,6 @@ var scaleCmd = &cobra.Command{
 
 func init() {
 	scaleCmd.Flags().IntVarP(&addNum, "shaderNum", "n", 1, "Number of nodes in the cluster")
+	scaleCmd.Flags().StringVarP(&clusterName, "clusterName", "c", "myCluster", "Name of the cluster")
 	RootCmd.AddCommand(scaleCmd)
 }

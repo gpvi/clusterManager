@@ -30,6 +30,7 @@ type ClusterNode struct {
 	AdditionalFlags []string      // 其他标志，如 myself
 	SlotsNum        int           // 节点负责的槽的数量
 	RedisClient     *redis.Client // Redis客户端
+	ClusterName     string        // 所属集群名字
 }
 
 func (n1 *ClusterNode) Equals(n2 *ClusterNode) bool {
@@ -113,5 +114,3 @@ func parseSingleSlot(slotStr string) (int, error) {
 	}
 	return singleSlot, nil
 }
-
-// ParseRedisClusterNodes 解析 Redis cluster nodes 命令的输出

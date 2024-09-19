@@ -17,10 +17,11 @@ var deleteCmd = &cobra.Command{
 			e := fmt.Errorf("create Podman ctx error:%v", err)
 			println(e)
 		}
-		model.DeleteAllContainers(ctxPodman)
+		model.DeleteAllContainers(ctxPodman, clusterName)
 	},
 }
 
 func init() {
+	deleteCmd.Flags().StringVarP(&clusterName, "clusterName", "c", "myCluster", "Name of the cluster")
 	RootCmd.AddCommand(deleteCmd)
 }

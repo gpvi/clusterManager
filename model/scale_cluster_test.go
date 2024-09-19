@@ -11,7 +11,8 @@ func TestAddAction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = ScaleClusterAction(ctx, 1)
+	clusterName := "myCluster"
+	err = ScaleClusterAction(ctx, 1, clusterName)
 	if err != nil {
 		t.Errorf("ScaleCluster() error = %v", err)
 	}

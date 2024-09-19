@@ -16,10 +16,9 @@ type RedisClusterConfig struct {
 	Replica int `json:"replica"` // 副本数量
 }
 
-func CreateClusterAction(ctx context.Context, shard int, replica int) error {
+func CreateClusterAction(ctx context.Context, shard int, replica int, clusterName string) error {
 	var err error
 	// 创建container 和 cluster 对象
-
 	clusterManager := NewClusterManager(replica)
 	containersManager := clusterManager.containersManager
 	//获取初始化容器信息
@@ -30,17 +29,17 @@ func CreateClusterAction(ctx context.Context, shard int, replica int) error {
 	}
 
 	// 创建节点（包括创建容器、meet）
-	err = clusterManager.CreateClusterNodes(shard, ctx)
+	err = clusterManager.CreateClusterNodes(shard, ctx, clusterName)
 	if err != nil {
 		return fmt.Errorf("create clusterNodes fail: %v", err)
 	}
 	// 设置主从关系
-	err = clusterManager.SetAllNodeRole(ctx)
+	err = clusterManager.SetAllNodeRole(ctx, clusterName)
 	if err != nil {
 		return fmt.Errorf("set node type fail: %v", err)
 	}
 
-	err = clusterManager.AllocateSlots(ctx)
+	err = clusterManager.AllocateSlots(ctx, clusterName)
 	if err != nil {
 		return fmt.Errorf("allocate slots fail:%v", err)
 	}

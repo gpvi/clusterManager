@@ -78,12 +78,12 @@ func (c *ContainersManager) AddContainerNode(node *ContainerNode) {
 	c.Num = len(c.Nodes) // 更新容器数量
 }
 
-func (c *ContainersManager) CreateContainers(ctx context.Context, nodeNum int) error {
+func (c *ContainersManager) CreateContainers(ctx context.Context, nodeNum int, clusterName string) error {
 	var err error
 	start := c.Num + 1
 	end := c.Num + nodeNum
 	for i := start; i <= end; i++ {
-		containerID, err := c.CreateContainer(ctx, i)
+		containerID, err := c.CreateContainer(ctx, i, clusterName)
 		if err != nil {
 			return err
 		}
@@ -109,14 +109,14 @@ func (c *ContainersManager) CreateContainers(ctx context.Context, nodeNum int) e
 		}
 
 		conIP := inspect.NetworkSettings.Networks["podman"].IPAddress
-
 		containerNode := ContainerNode{
-			Name:     inspect.Name,
-			HostIP:   "127.0.0.1",
-			HostPort: hostPort,
-			ConIp:    conIP,
-			ID:       inspect.ID,
-			ConPort:  6379,
+			Name:        inspect.Name,
+			HostIP:      "127.0.0.1",
+			HostPort:    hostPort,
+			ConIp:       conIP,
+			ID:          inspect.ID,
+			ConPort:     6379,
+			ClusterName: clusterName,
 		}
 		c.Nodes = append(c.Nodes, &containerNode) // 添加到容器列表
 		c.IDToNode[inspect.ID] = &containerNode   // 更新 ID 映射
@@ -127,13 +127,11 @@ func (c *ContainersManager) CreateContainers(ctx context.Context, nodeNum int) e
 	return err
 }
 
-var ClusterName = "cluster"
-
 // CreateContainer 创建容器
-func (c *ContainersManager) CreateContainer(ctx context.Context, index int) (string, error) {
+func (c *ContainersManager) CreateContainer(ctx context.Context, index int, clusterName string) (string, error) {
 	startConfigPath := filepath.Join(redisConfigPath, "redis.conf")
 	s := specgen.NewSpecGenerator("myredis", false)
-	s.Name = fmt.Sprintf("%v-redis-%d", ClusterName, index)
+	s.Name = fmt.Sprintf("%v-redis-%d", clusterName, index)
 	s.Mounts = []specs.Mount{
 		{
 			Source:      redisHostConfigPath,
@@ -150,7 +148,8 @@ func (c *ContainersManager) CreateContainer(ctx context.Context, index int) (str
 	}
 
 	s.Labels = map[string]string{
-		"env": "prod",
+		"env":         "prod",
+		"clusterName": clusterName,
 	}
 
 	s.PortMappings = []types.PortMapping{
@@ -250,12 +249,13 @@ func (c *ContainersManager) UpdateAllContainersInfo(ctx context.Context) error {
 		for _, network := range inspect.NetworkSettings.Networks {
 			// 创建 ContainerNode 实例，存储容器的相关信息
 			containerNode := ContainerNode{
-				Name:     container.Names[0],
-				HostIP:   "127.0.0.1",
-				ConIp:    network.IPAddress,
-				HostPort: container.Ports[0].HostPort,
-				ID:       container.ID,
-				ConPort:  6379,
+				Name:        container.Names[0],
+				HostIP:      "127.0.0.1",
+				ConIp:       network.IPAddress,
+				HostPort:    container.Ports[0].HostPort,
+				ID:          container.ID,
+				ConPort:     6379,
+				ClusterName: container.Labels["clusterName"],
 			}
 
 			// 将当前容器信息加入 ContainersManager
