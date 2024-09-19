@@ -87,7 +87,7 @@ func WriteToJSONFile(fileName string, data interface{}) error {
 // ReadFromJSONFile 从 JSON 文件中读取数据
 func ReadFromJSONFile(fileName string, data interface{}) error {
 	// 读取文件内容
-	fileData, err := os.ReadFile(fileName) // Go 1.16 后 ioutil 被弃用，改为 os.ReadFile
+	fileData, err := os.ReadFile(fileName)
 	if err != nil {
 		return err
 	}

@@ -18,7 +18,11 @@ type RedisClusterConfig struct {
 
 func CreateClusterAction(ctx context.Context, shard int, replica int, clusterName string) error {
 	var err error
-	// 创建container 和 cluster 对象
+	//创建container 和 cluster 对象
+	err = InitConfig()
+	if err != nil {
+		return fmt.Errorf("init config fail: %v", err)
+	}
 	clusterManager := NewClusterManager(replica)
 	containersManager := clusterManager.containersManager
 	//获取初始化容器信息

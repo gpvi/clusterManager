@@ -293,7 +293,7 @@ func (c *ClusterManager) MeetNodes(client *redis.Client, ctx context.Context, cl
 		}
 		_, exist := c.AlreadyMeetNode[node.HostIP]
 		if !exist {
-			_, err = client.ClusterMeet(ctx, node.ConIp, "6379").Result()
+			_, err = client.ClusterMeet(ctx, node.ConIp, strconv.Itoa(RedisContainerPort)).Result()
 			if err != nil {
 				return fmt.Errorf("could not meet node %v: %v", node.ConIp, err)
 			}

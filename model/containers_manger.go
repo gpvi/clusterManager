@@ -13,6 +13,7 @@ import (
 	"log"
 	"path/filepath"
 	"redisStudy/utils"
+	"strconv"
 	"time"
 )
 
@@ -103,7 +104,9 @@ func (c *ContainersManager) CreateContainers(ctx context.Context, nodeNum int, c
 			}
 
 		}
-		hostPort, err := utils.StringToUint16(inspect.NetworkSettings.Ports["6379/tcp"][0].HostPort)
+		tempKey := strconv.Itoa(RedisContainerPort)
+		tempKey += "/tcp"
+		hostPort, err := utils.StringToUint16(inspect.NetworkSettings.Ports[tempKey][0].HostPort)
 		if err != nil {
 			return fmt.Errorf("failed to parse host port for container %s: %v", id, err)
 		}
@@ -115,7 +118,7 @@ func (c *ContainersManager) CreateContainers(ctx context.Context, nodeNum int, c
 			HostPort:    hostPort,
 			ConIp:       conIP,
 			ID:          inspect.ID,
-			ConPort:     6379,
+			ConPort:     uint16(RedisContainerPort),
 			ClusterName: clusterName,
 		}
 		c.Nodes = append(c.Nodes, &containerNode) // 添加到容器列表
@@ -129,19 +132,19 @@ func (c *ContainersManager) CreateContainers(ctx context.Context, nodeNum int, c
 
 // CreateContainer 创建容器
 func (c *ContainersManager) CreateContainer(ctx context.Context, index int, clusterName string) (string, error) {
-	startConfigPath := filepath.Join(redisConfigPath, "redis.conf")
+	startConfigPath := filepath.Join(RedisConfigPath, "redis.conf")
 	s := specgen.NewSpecGenerator("myredis", false)
 	s.Name = fmt.Sprintf("%v-redis-%d", clusterName, index)
 	s.Mounts = []specs.Mount{
 		{
-			Source:      redisHostConfigPath,
-			Destination: redisConfigPath,
+			Source:      RedisHostConfigPath,
+			Destination: RedisConfigPath,
 			Type:        "bind",
 			Options:     []string{"ro"},
 		},
 		{
-			Source:      redisHostDataPath,
-			Destination: redisConfigDataPath,
+			Source:      RedisHostDataPath,
+			Destination: RedisConfigDataPath,
 			Type:        "bind",
 			Options:     []string{"ro"},
 		},
@@ -151,21 +154,27 @@ func (c *ContainersManager) CreateContainer(ctx context.Context, index int, clus
 		"env":         "prod",
 		"clusterName": clusterName,
 	}
-
+	port := uint16(RedisContainerPort)
+	busPort := uint16(RedisContainerPort + 10000)
 	s.PortMappings = []types.PortMapping{
 		{
-			ContainerPort: 6379,
+			ContainerPort: port,
 			HostPort:      0, // Redis server port, 0 indicates a random host port should be chosen
 			Protocol:      "tcp",
 		},
 		{
-			ContainerPort: 16379, // cluster-announce-bus-port (Redis ClusterManager bus port)
-			HostPort:      0,     // Random host port
+			ContainerPort: busPort, // cluster-announce-bus-port (Redis ClusterManager bus port)
+			HostPort:      0,       // Random host port
 			Protocol:      "tcp",
 		},
 	}
 
-	s.Command = []string{"redis-server", startConfigPath}
+	s.Command = []string{
+		"redis-server",
+		startConfigPath,                   // 指向 Redis 配置文件
+		"--port", strconv.Itoa(int(port)), // 设置 Redis 服务端口
+		"--cluster-announce-bus-port", strconv.Itoa(int(busPort)), // Redis Cluster bus 端口
+	}
 
 	createResponse, err := containers.CreateWithSpec(ctx, s, nil)
 	if err != nil {
@@ -254,7 +263,7 @@ func (c *ContainersManager) UpdateAllContainersInfo(ctx context.Context) error {
 				ConIp:       network.IPAddress,
 				HostPort:    container.Ports[0].HostPort,
 				ID:          container.ID,
-				ConPort:     6379,
+				ConPort:     uint16(RedisContainerPort),
 				ClusterName: container.Labels["clusterName"],
 			}
 
