@@ -10,7 +10,10 @@ import (
 var deleteCmd = &cobra.Command{
 	Use:   "delete",
 	Short: "delete cluster",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if clusterName == "" {
+			return fmt.Errorf("please input clustername first")
+		}
 		ctx := context.Background()
 		ctxPodman, err := model.CreatePodmanConnection(ctx)
 		if err != nil {
@@ -18,10 +21,11 @@ var deleteCmd = &cobra.Command{
 			println(e)
 		}
 		model.DeleteAllContainers(ctxPodman, clusterName)
+		return nil
 	},
 }
 
 func init() {
-	deleteCmd.Flags().StringVarP(&clusterName, "clusterName", "c", "myCluster", "Name of the cluster")
+	deleteCmd.Flags().StringVarP(&clusterName, "clusterName", "n", "", "Name of the cluster")
 	RootCmd.AddCommand(deleteCmd)
 }

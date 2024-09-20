@@ -9,7 +9,10 @@ import (
 
 func ScaleClusterAction(ctx context.Context, masterNum int, clusterName string) error {
 	var err error
-
+	err = InitConfig()
+	if err != nil {
+		return err
+	}
 	// 读取相关配置
 	var configFromFile RedisClusterConfig
 	err = utils.ReadFromJSONFile(ConfigSaveFileName, &configFromFile)

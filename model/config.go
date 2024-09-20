@@ -40,15 +40,14 @@ type Config struct {
 	RedisHostDataPath   string
 	RedisConfigDataPath string
 	ConfigSaveFileName  string
-	Port                int
 }
 
 func (c *Config) ReadConfig() error {
 
 	_, filename, _, _ := runtime.Caller(0)
 	root := path.Dir(path.Dir(filename))
-	filePath := filepath.Join(root, "config", "conf.json")
-	err := utils.ReadFromJSONFile(filePath, c)
+	filePath := filepath.Join(root, "config", "conf.yaml")
+	err := utils.ReadFromYAMLFile(filePath, c)
 	if err != nil {
 		return err
 	}
@@ -82,13 +81,6 @@ func (c *Config) ReadConfig() error {
 	} else {
 		ConfigSaveFileName = c.ConfigSaveFileName
 	}
-
-	if c.Port == 0 {
-		RedisContainerPort = 6379
-	} else {
-		RedisContainerPort = c.Port
-	}
-
 	return nil
 }
 

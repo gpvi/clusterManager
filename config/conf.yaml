@@ -1,0 +1,5 @@
+RedisHostConfigPath: "/Users/zhuoqun.niu/Desktop/redis/config"
+RedisConfigPath: "/data/redis/config"
+RedisHostDataPath: "/Users/zhuoqun.niu/Desktop/redis/data"
+RedisConfigDataPath: "/data/redis/data"
+ConfigSaveFileName: "redis_cluster_config.json"

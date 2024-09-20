@@ -30,8 +30,9 @@ var createCmd = &cobra.Command{
 }
 
 func init() {
-	createCmd.Flags().IntVarP(&shaderNum, "shaderNum", "n", 3, "Number of nodes in the cluster")
+	createCmd.Flags().IntVarP(&shaderNum, "shaderNum", "s", 3, "Number of nodes in the cluster")
 	createCmd.Flags().IntVarP(&replica, "replica", "r", 2, "Number of nodes in the cluster")
-	createCmd.Flags().StringVarP(&clusterName, "clusterName", "c", "myCluster", "Name of the cluster")
+	createCmd.Flags().StringVarP(&clusterName, "clusterName", "n", "cluster", "Name of the cluster")
+	createCmd.Flags().IntVarP(&model.RedisContainerPort, "port", "p", 6379, "Port of the Redis container")
 	RootCmd.AddCommand(createCmd)
 }

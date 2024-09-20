@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/ghodss/yaml"
 	"github.com/go-redis/redis/v8"
 	"os"
 	"strconv"
@@ -94,6 +95,53 @@ func ReadFromJSONFile(fileName string, data interface{}) error {
 
 	// 将 JSON 数据反序列化为结构体
 	err = json.Unmarshal(fileData, data)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// WriteToYAMLFile 将数据写入 YAML 文件
+func WriteToYAMLFile(fileName string, data interface{}) error {
+	// 将结构体转换为 YAML 字符串并格式化
+	yamlData, err := yaml.Marshal(data)
+	if err != nil {
+		return err
+	}
+
+	// 创建或打开文件
+	file, err := os.Create(fileName)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		err = file.Close()
+		if err != nil {
+			fmt.Println("Error closing file:", err)
+		}
+	}()
+
+	// 将 YAML 数据写入文件
+	_, err = file.Write(yamlData)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Data written to file: %s\n", fileName)
+	return nil
+}
+
+// ReadFromYAMLFile 从 YAML 文件中读取数据
+func ReadFromYAMLFile(fileName string, data interface{}) error {
+	// 读取文件内容
+	fileData, err := os.ReadFile(fileName)
+	if err != nil {
+		return err
+	}
+
+	// 将 YAML 数据反序列化为结构体
+	err = yaml.Unmarshal(fileData, data)
 	if err != nil {
 		return err
 	}

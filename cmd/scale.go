@@ -12,7 +12,10 @@ var addNum int
 var scaleCmd = &cobra.Command{
 	Use:   "scale",
 	Short: "scale  cluster",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if clusterName == "" {
+			return fmt.Errorf("please input clustername first")
+		}
 		ctx := context.Background()
 		ctx, err := model.CreatePodmanConnection(ctx)
 		if err != nil {
@@ -25,11 +28,12 @@ var scaleCmd = &cobra.Command{
 			e := fmt.Errorf("ScaleCluster() error = %v", err)
 			println(e)
 		}
+		return nil
 	},
 }
 
 func init() {
-	scaleCmd.Flags().IntVarP(&addNum, "shaderNum", "n", 1, "Number of nodes in the cluster")
-	scaleCmd.Flags().StringVarP(&clusterName, "clusterName", "c", "myCluster", "Name of the cluster")
+	scaleCmd.Flags().IntVarP(&addNum, "shaderNum", "s", 1, "Number of nodes in the cluster")
+	scaleCmd.Flags().StringVarP(&clusterName, "clusterName", "n", "", "Name of the cluster")
 	RootCmd.AddCommand(scaleCmd)
 }
