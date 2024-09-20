@@ -293,7 +293,7 @@ func (c *ClusterManager) MeetNodes(client *redis.Client, ctx context.Context, cl
 		}
 		_, exist := c.AlreadyMeetNode[node.HostIP]
 		if !exist {
-			_, err = client.ClusterMeet(ctx, node.ConIp, strconv.Itoa(RedisContainerPort)).Result()
+			_, err = client.ClusterMeet(ctx, node.ConIp, strconv.Itoa(int(RedisContainerPort))).Result()
 			if err != nil {
 				return fmt.Errorf("could not meet node %v: %v", node.ConIp, err)
 			}
@@ -531,6 +531,9 @@ func (c *ClusterManager) PrintClusterNodesInfo(ctx context.Context) error {
 	// 解析返回结果，提取所有的 node ID 和对应的 IP+Port
 	lines := strings.Split(nodesInfo, "\n")
 	for _, line := range lines {
+		if line == "" {
+			continue
+		}
 		fields := strings.Split(line, " ")
 		if len(fields) < 8 {
 			continue // 跳过字段数不够的行

@@ -32,14 +32,17 @@ var RedisConfigDataPath string
 // var ConfigSaveFileName = "redis_cluster_config.json"
 var ConfigSaveFileName string
 
-var RedisContainerPort int
+var RedisContainerPort uint16
+
+var imageName string
 
 type Config struct {
-	RedisHostConfigPath string
-	RedisConfigPath     string
-	RedisHostDataPath   string
-	RedisConfigDataPath string
-	ConfigSaveFileName  string
+	RedisHostConfigPath string `yaml:"redis_host_config_path"`
+	RedisConfigPath     string `yaml:"redis_config_path"`
+	RedisHostDataPath   string `yaml:"redis_host_data_path"`
+	RedisConfigDataPath string `yaml:"redis_config_data_path"`
+	ConfigSaveFileName  string `yaml:"configs_save_file_name"`
+	ImageName           string `yaml:"image_name"`
 }
 
 func (c *Config) ReadConfig() error {
@@ -81,6 +84,11 @@ func (c *Config) ReadConfig() error {
 	} else {
 		ConfigSaveFileName = c.ConfigSaveFileName
 	}
+	if c.ImageName == "" {
+		return fmt.Errorf("image name is empty")
+	} else {
+		imageName = c.ImageName
+	}
 	return nil
 }
 
@@ -91,6 +99,7 @@ func NewConfig() *Config {
 		RedisHostDataPath:   "",
 		RedisConfigDataPath: "",
 		ConfigSaveFileName:  "",
+		ImageName:           "",
 	}
 }
 func (c *Config) PrintConfig() {
@@ -99,6 +108,7 @@ func (c *Config) PrintConfig() {
 	fmt.Printf("RedsiHostDataPath:%s\n", c.RedisHostDataPath)
 	fmt.Printf("RedsiConfigDataPath:%s\n", c.RedisConfigDataPath)
 	fmt.Printf("ConfigSaveFileName:%s\n", c.ConfigSaveFileName)
+	fmt.Println("imageName:", imageName)
 }
 
 func InitConfig() error {

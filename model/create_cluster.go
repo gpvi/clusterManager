@@ -13,7 +13,8 @@ import (
 var cliRedis *redis.Client
 
 type RedisClusterConfig struct {
-	Replica int `json:"replica"` // 副本数量
+	Replica int    `yaml:"replica"` // 副本数量
+	Port    uint16 `yaml:"port"`
 }
 
 func CreateClusterAction(ctx context.Context, shard int, replica int, clusterName string) error {
@@ -52,6 +53,7 @@ func CreateClusterAction(ctx context.Context, shard int, replica int, clusterNam
 
 	config := RedisClusterConfig{
 		Replica: clusterManager.Replica,
+		Port:    RedisContainerPort,
 	}
 	// 将结构体数据写入 JSON 文件
 	// 检查文件是否存在
@@ -63,7 +65,7 @@ func CreateClusterAction(ctx context.Context, shard int, replica int, clusterNam
 			return err
 		}
 	}
-	err = utils.WriteToJSONFile(ConfigSaveFileName, config)
+	err = utils.WriteToYAMLFile(ConfigSaveFileName, config)
 	if err != nil {
 		return fmt.Errorf("error writing to JSON file %s", err)
 	}
