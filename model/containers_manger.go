@@ -203,7 +203,9 @@ func (c *ContainersManager) GetCurContainersNum(ctx context.Context) error {
 
 // CreatePodmanConnection 创建连接
 func CreatePodmanConnection(ctx context.Context) (context.Context, error) {
+	//  "containerdSock": "/var/run/containerd/containerd.sock"
 	conn, err := bindings.NewConnection(ctx, "unix:///Users/zhuoqun.niu/.local/share/containers/podman/machine/podman.sock")
+	//conn, err := bindings.NewConnection(ctx, "unix:///var/run/containerd/containerd.sock")
 	if err != nil {
 		return ctx, fmt.Errorf("create podman conection fail:%v ", err)
 	}
