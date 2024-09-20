@@ -16,7 +16,7 @@ func ScaleClusterAction(ctx context.Context, masterNum int, clusterName string) 
 	var configFromFile RedisClusterConfig
 	err = utils.ReadFromYAMLFile(ConfigSaveFileName, &configFromFile)
 	if err != nil {
-		return fmt.Errorf("Error reading from JSON file: %s", err)
+		return fmt.Errorf("error reading from JSON file: %s", err)
 	}
 	replica := configFromFile.Replica
 	RedisContainerPort = configFromFile.Port

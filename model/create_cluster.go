@@ -59,7 +59,7 @@ func CreateClusterAction(ctx context.Context, shard int, replica int, clusterNam
 		fmt.Printf("File %s already exists, deleting...\n", ConfigSaveFileName)
 		err := os.Remove(ConfigSaveFileName) // 删除文件
 		if err != nil {
-			return fmt.Errorf("Error deleting file: %s", err)
+			return fmt.Errorf("error deleting file: %s", err)
 		}
 	}
 	err = utils.WriteToYAMLFile(ConfigSaveFileName, config)
