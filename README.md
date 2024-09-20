@@ -1,7 +1,7 @@
 
 
 ## 项目介绍
-此项目实现了对单个集群的创建删除，以及集群的扩容。
+此项目在Macos开发环境下实现了对单个集群的创建、删除以及扩容功能。
 
 ## 环境配置
 ### 1. 下载podman
@@ -59,7 +59,12 @@ redis.conf 文件在当前目录下可以找到，./prepareFiles/redis/config/re
 cluster_enabled=yes，cluster_config_file=nodes.conf，cluster_node_timeout=5000，cluster_require_full_coverage=yes，cluster_replica_validity_factor=10，cluster_migration_barrier=1，cluster_slave_no_failover=yes，cluster_slave_validity_factor=10，cluster_slave_no_failover=yes，cluster_slave_no_failover=yes，cluster_slave_no_failover=yes，cluster_slave_no_failover=yes，
 ~~~
 
-### 3. 编写dockerfile 使用Podman build
+### 3. 编写dockerfile 使用Podman build 构建镜像
+
+
+方法一：直接运行根目录下的build_image.sh
+
+方法二：自定义镜像
 ```Dockerfile
 # # 使用 redis:alpine 作为基础镜像
 # FROM redis:alpine
@@ -82,27 +87,46 @@ RUN apt-get update && \
     mkdir -p /usr/local/var/db/redis-cluster/
     
 ```
-- 使用podman build 构建镜像
-方法一：直接运行根目录下的build_image.sh
-方法二：在根目录下执行如下命令
-
+之后运行podman build命令
 ```
 podman build -t <imagename> -f <dockerfilepath>
 ```
 正确运行结果：
 ![img.png](img/podmanBuild.png)
 
+### 4. 修改配置文件
+#### 配置文件说明：
 
-### 4. 使用 go mod install 下载所需的包
+项目配置文件位置：configs/config.yaml
+- redis_host_config_path: 为宿主机redis配置文件存放的目录，默认为"/{项目的绝对路径}/prepareFiles/redis/config,例如："/Users/{username}/code/redisManager/prepareFiles/redis/config"
+- redis_host_data_path: 为宿主机redis数据存放的目录，默认为“/{项目的绝对路径}/prepareFiles/redis/config” 例如："/Users/{username}/code/redisManager/prepareFiles/redis/data"
+- redis_config_path: 为容器中redis配置文件存放的目录，默认为/data/redis/config
+- redis_config_data_path: 为容器中redis数据存放的目录，默认为/data/redis/data
+- configs_save_file_name: 为创建custer后存储运行时配置的yaml文件路径
+- image_name: "myredis" 使用podman build 生成的镜像名称
+
+需要修改的配置：
+- redis_host_config_path: 将{项目的绝对路径}替换为此项目的绝对路径
+- redis_host_data_path: 将{项目的绝对路径}替换为此项目的绝对路径
+- 若需修改 redis_config_path 和 redis_config_data_path，需修改dockerfile中的创建文件夹的路径，即此项目中的./prepareFiles/redisv3.dockerfile
+
+
+### 5. 使用 go mod install 下载所需的包
 ```shell
+# 进入当前项目目录
+cd reidsManager
+# 安装依赖包
 go mod install
+go mod type 
 ```
 ### 5. 编译项目
 ```
 go build -o cluster
 ```
 编译完成后在根目录会出现如下文件：
+
 ![./img/img.png](img/img.png)
+
 ## 使用说明 
 ### 创建集群
 ```shell
@@ -119,6 +143,7 @@ go build -o cluster
 ~~~
 正确运行结果：
 ![./img/img_2.png](img/img_2.png)
+其中开始显示配置
 ### 删除集群
 ```shell
 ./cluster delete -n <clusterName>

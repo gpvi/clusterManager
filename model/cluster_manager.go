@@ -150,7 +150,7 @@ func (c *ClusterManager) AddShaders(ctx context.Context, shaderNum int, clusterN
 		if c.containersManager.IPToNode[masterIP].ClusterName != clusterName {
 			continue
 		}
-		//
+
 		for _, slaveID := range v {
 			slaveIP := IDToIP[slaveID]
 			err = c.SetNodeAsSlave(ctx, masterIP, slaveIP, clusterName)
