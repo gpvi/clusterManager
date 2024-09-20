@@ -35,101 +35,306 @@ redisStudy
    ├─ uils_test.go
    └─ utils.go
 ```
+用例图
+![img.png](img/useCase.png)
+
 
 主要类关系
 
-```plantuml
-@startuml
-!define RECTANGLE class
+![alt text](img/image.png)
+![alt text](img/image-1.png)
+![img.png](img/containerNode.png)
 
-RECTANGLE ClusterNode {
-  + ID : string                     
-  + IP : string                      
-  + Port : uint16                    
-  + NodeType : string                
-  + MasterID : string                
-  + PingSent : int64                
-  + PongRecv : int64                 
-  + ConfigEpoch : int64             
-  + LinkState : string               
-  + Slots : []SlotRange              
-  + AdditionalFlags : []string       
-  + SlotsNum : int                    
-  + ClusterName : string             
-}
+[//]: # (```plantuml)
 
-RECTANGLE ClusterManager {
-  + EmptyMasters : []*ClusterNode
-  + IDToClusterNode : map[string]*ClusterNode
-  + IPToClusterID : map[string]string
-  + AlreadyMeetNode : map[string]bool
-  + MasterToSlave : map[string][]string
-  + AlreadySetCluster : map[string]bool
-  + ClusterNodeList : []*ClusterNode
-  + MasterIDs : []string
-  + MasterSet : map[string]bool
-  + Replica : int
-  - containersManager : *ContainersManager
+[//]: # ()
+[//]: # (@startuml)
 
-  + CreateCluster(clusterName : string, shaderNum : int, replicaNum : int) : error
-  + CreateClusterNodes(sharedNum : int, ctx : context.Context, clusterName : string) : error
-  + MeetNodes(client : redis.Client, ctx : context.Context, clusterName : string) : error
-  + SetAllNodeRole(ctx : context.Context, clusterName : string) : error
-  + SetNodeAsSlave(ctx : context.Context, masterIP : string, slaveIP : string, clusterName : string) : error
-  + AddClusterNode(ctx : context.Context, clusterName : string) : (ContainerNode, error)
-  + VerifyAllocateSlots(ctx : context.Context, containers : ContainersManager, clusterName : string) : error
-  + ParseRedisClusterNodes(ctx : context.Context, data : string, clusterName : string) : ([]ClusterNode, error)
-  + GetClusterNodes(ctx : context.Context, loginNode : ContainerNode, clusterName : string) : ([]ClusterNode, error)
-  - sortClusterNodesByIP(nodes : []*ClusterNode) : void
-  + MigrateSlot(ctx : context.Context, slot : int, sourceNodeID : string, destNodeID : string) : error
-  + AllocateSlots(ctx : context.Context, clusterName : string) : error
-  + MigratesSlotsToEmptyNode(ctx : context.Context, clusterName : string) : error
-  + calculateSlots(slots : []SlotRange) : int
-  - verifyNodeTypeSet(ctx : context.Context, masterToSlave : map[string][]string, clusterName : string) : (bool, error)
-  - addShaderAndReplica(ctx : context.Context, clusterName : string) : (string, error)
-}
+[//]: # ()
+[//]: # (!define RECTANGLE class)
 
-RECTANGLE ContainerNode {
-  - Name: string
-  - HostIP: string
-  - HostPort: uint16
-  - ConIp: string
-  - ConPort: uint16
-  - ID: string
-  - ClusterName: string
+[//]: # ()
+[//]: # ()
+[//]: # (RECTANGLE ClusterNode {)
 
-  + CreateRedisClient(ctx: context.Context): *redis.Client
-  + CloseRedisClient(cli: *redis.Client): error
-}
+[//]: # ()
+[//]: # (  + ID : string                     )
 
-RECTANGLE ContainersManager {
-  - IPToNode: map[string]*ContainerNode
-  - Num: int
-  - IDToNode: map[string]*ContainerNode
-  - Nodes: []*ContainerNode
-  - ContainersIDSet: map[string]bool
+[//]: # ()
+[//]: # (  + IP : string                      )
 
-  + AddContainerNode(node: *ContainerNode)
-  + CreateContainers(ctx: context.Context, nodeNum: int, clusterName: string) : error
-  + CreateContainer(ctx: context.Context, index: int, clusterName : string) : (string, error)
-  + GetCurContainersNum(ctx : context.Context) : error
-  + UpdateAllContainersInfo(ctx : context.Context) : error
-}
+[//]: # ()
+[//]: # (  + Port : uint16                    )
 
-RECTANGLE redis {
-  + NewClient(options : *Options) : *Client
-  + Ping(ctx : context.Context) : *Result
-}
+[//]: # ()
+[//]: # (  + NodeType : string                )
 
-ClusterManager"1" -->"1" ContainersManager : uses
-ClusterManager"1" --> "*"ClusterNode : manages
-ClusterNode "1" --> "1"ContainerNode : related by IP
-ContainerNode "1"-->"1" redis : uses
-ContainersManager "1" --> "*" ContainerNode : manages
+[//]: # ()
+[//]: # (  + MasterID : string                )
 
-@enduml
+[//]: # ()
+[//]: # (  + PingSent : int64                )
 
+[//]: # ()
+[//]: # (  + PongRecv : int64                 )
 
-  
-```
+[//]: # ()
+[//]: # (  + ConfigEpoch : int64             )
 
+[//]: # ()
+[//]: # (  + LinkState : string               )
+
+[//]: # ()
+[//]: # (  + Slots : []SlotRange              )
+
+[//]: # ()
+[//]: # (  + AdditionalFlags : []string       )
+
+[//]: # ()
+[//]: # (  + SlotsNum : int                    )
+
+[//]: # ()
+[//]: # (  + ClusterName : string             )
+
+[//]: # ()
+[//]: # (})
+
+[//]: # ()
+[//]: # ()
+[//]: # (RECTANGLE ClusterManager {)
+
+[//]: # ()
+[//]: # (  + EmptyMasters : []*ClusterNode)
+
+[//]: # ()
+[//]: # (  + IDToClusterNode : map[string]*ClusterNode)
+
+[//]: # ()
+[//]: # (  + IPToClusterID : map[string]string)
+
+[//]: # ()
+[//]: # (  + AlreadyMeetNode : map[string]bool)
+
+[//]: # ()
+[//]: # (  + MasterToSlave : map[string][]string)
+
+[//]: # ()
+[//]: # (  + AlreadySetCluster : map[string]bool)
+
+[//]: # ()
+[//]: # (  + ClusterNodeList : []*ClusterNode)
+
+[//]: # ()
+[//]: # (  + MasterIDs : []string)
+
+[//]: # ()
+[//]: # (  + MasterSet : map[string]bool)
+
+[//]: # ()
+[//]: # (  + Replica : int)
+
+[//]: # ()
+[//]: # (  - containersManager : *ContainersManager)
+
+[//]: # ()
+[//]: # ()
+[//]: # (  + CreateCluster&#40;clusterName : string, shaderNum : int, replicaNum : int&#41; : error)
+
+[//]: # ()
+[//]: # (  + CreateClusterNodes&#40;sharedNum : int, ctx : context.Context, clusterName : string&#41; : error)
+
+[//]: # ()
+[//]: # (  + MeetNodes&#40;client : redis.Client, ctx : context.Context, clusterName : string&#41; : error)
+
+[//]: # ()
+[//]: # (  + SetAllNodeRole&#40;ctx : context.Context, clusterName : string&#41; : error)
+
+[//]: # ()
+[//]: # (  + SetNodeAsSlave&#40;ctx : context.Context, masterIP : string, slaveIP : string, clusterName : string&#41; : error)
+
+[//]: # ()
+[//]: # (  + AddClusterNode&#40;ctx : context.Context, clusterName : string&#41; : &#40;ContainerNode, error&#41;)
+
+[//]: # ()
+[//]: # (  + VerifyAllocateSlots&#40;ctx : context.Context, containers : ContainersManager, clusterName : string&#41; : error)
+
+[//]: # ()
+[//]: # (  + ParseRedisClusterNodes&#40;ctx : context.Context, data : string, clusterName : string&#41; : &#40;[]ClusterNode, error&#41;)
+
+[//]: # ()
+[//]: # (  + GetClusterNodes&#40;ctx : context.Context, loginNode : ContainerNode, clusterName : string&#41; : &#40;[]ClusterNode, error&#41;)
+
+[//]: # ()
+[//]: # (  - sortClusterNodesByIP&#40;nodes : []*ClusterNode&#41; : void)
+
+[//]: # ()
+[//]: # (  + MigrateSlot&#40;ctx : context.Context, slot : int, sourceNodeID : string, destNodeID : string&#41; : error)
+
+[//]: # ()
+[//]: # (  + AllocateSlots&#40;ctx : context.Context, clusterName : string&#41; : error)
+
+[//]: # ()
+[//]: # (  + MigratesSlotsToEmptyNode&#40;ctx : context.Context, clusterName : string&#41; : error)
+
+[//]: # ()
+[//]: # (  + calculateSlots&#40;slots : []SlotRange&#41; : int)
+
+[//]: # ()
+[//]: # (  - verifyNodeTypeSet&#40;ctx : context.Context, masterToSlave : map[string][]string, clusterName : string&#41; : &#40;bool, error&#41;)
+
+[//]: # ()
+[//]: # (  - addShaderAndReplica&#40;ctx : context.Context, clusterName : string&#41; : &#40;string, error&#41;)
+
+[//]: # ()
+[//]: # (})
+
+[//]: # ()
+[//]: # ()
+[//]: # (RECTANGLE ContainerNode {)
+
+[//]: # ()
+[//]: # (  - Name: string)
+
+[//]: # ()
+[//]: # (  - HostIP: string)
+
+[//]: # ()
+[//]: # (  - HostPort: uint16)
+
+[//]: # ()
+[//]: # (  - ConIp: string)
+
+[//]: # ()
+[//]: # (  - ConPort: uint16)
+
+[//]: # ()
+[//]: # (  - ID: string)
+
+[//]: # ()
+[//]: # (  - ClusterName: string)
+
+[//]: # ()
+[//]: # ()
+[//]: # (  + CreateRedisClient&#40;ctx: context.Context&#41;: *redis.Client)
+
+[//]: # ()
+[//]: # (  + CloseRedisClient&#40;cli: *redis.Client&#41;: error)
+
+[//]: # ()
+[//]: # (})
+
+[//]: # ()
+[//]: # ()
+[//]: # (RECTANGLE ContainersManager {)
+
+[//]: # ()
+[//]: # (  - IPToNode: map[string]*ContainerNode)
+
+[//]: # ()
+[//]: # (  - Num: int)
+
+[//]: # ()
+[//]: # (  - IDToNode: map[string]*ContainerNode)
+
+[//]: # ()
+[//]: # (  - Nodes: []*ContainerNode)
+
+[//]: # ()
+[//]: # (  - ContainersIDSet: map[string]bool)
+
+[//]: # ()
+[//]: # ()
+[//]: # (  + AddContainerNode&#40;node: *ContainerNode&#41;)
+
+[//]: # ()
+[//]: # (  + CreateContainers&#40;ctx: context.Context, nodeNum: int, clusterName: string&#41; : error)
+
+[//]: # ()
+[//]: # (  + CreateContainer&#40;ctx: context.Context, index: int, clusterName : string&#41; : &#40;string, error&#41;)
+
+[//]: # ()
+[//]: # (  + GetCurContainersNum&#40;ctx : context.Context&#41; : error)
+
+[//]: # ()
+[//]: # (  + UpdateAllContainersInfo&#40;ctx : context.Context&#41; : error)
+
+[//]: # ()
+[//]: # (})
+
+[//]: # ()
+[//]: # ()
+[//]: # (RECTANGLE redis {)
+
+[//]: # ()
+[//]: # (  + NewClient&#40;options : *Options&#41; : *Client)
+
+[//]: # ()
+[//]: # (  + Ping&#40;ctx : context.Context&#41; : *Result)
+
+[//]: # ()
+[//]: # (})
+
+[//]: # ()
+[//]: # ()
+[//]: # (' ClusterManager"1" -->"1" ContainersManager : uses)
+
+[//]: # ()
+[//]: # ('  ClusterManager"1" --> "*"ClusterNode : manages)
+
+[//]: # ()
+[//]: # ( ClusterNode "1" <--> "1"ContainerNode : related by IP)
+
+[//]: # ()
+[//]: # (' ContainerNode "1"-->"1" redis : uses)
+
+[//]: # ()
+[//]: # ( ContainersManager "1" --> "*" ContainerNode : manages)
+
+[//]: # ()
+[//]: # ()
+[//]: # (@enduml)
+
+[//]: # ()
+[//]: # (```)
+
+[//]: # ()
+[//]: # (```plantuml)
+
+[//]: # (@startuml)
+
+[//]: # (left to right direction)
+
+[//]: # ()
+[//]: # (actor 管理员)
+
+[//]: # ()
+[//]: # (usecase "创建集群" as UC1)
+
+[//]: # (usecase "删除集群" as UC2)
+
+[//]: # (usecase "扩展集群" as UC3)
+
+[//]: # (usecase "查看集群信息" as UC4)
+
+[//]: # (usecase "迁移槽" as UC5)
+
+[//]: # ()
+[//]: # (管理员 --> UC1)
+
+[//]: # (管理员 --> UC2)
+
+[//]: # (管理员 --> UC3)
+
+[//]: # ()
+[//]: # (UC1 --> UC4 : 在创建时查看)
+
+[//]: # (UC3 --> UC4 : 在扩展时查看)
+
+[//]: # (UC3 --> UC5 : 在扩展时迁移)
+
+[//]: # ()
+[//]: # (@enduml)
+
+[//]: # (```)
+
+[//]: # ()
