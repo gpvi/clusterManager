@@ -3,7 +3,6 @@ package model
 import (
 	"context"
 	"fmt"
-	"log"
 	"redisStudy/utils"
 )
 
@@ -17,7 +16,7 @@ func ScaleClusterAction(ctx context.Context, masterNum int, clusterName string) 
 	var configFromFile RedisClusterConfig
 	err = utils.ReadFromYAMLFile(ConfigSaveFileName, &configFromFile)
 	if err != nil {
-		log.Fatalf("Error reading from JSON file: %s", err)
+		return fmt.Errorf("Error reading from JSON file: %s", err)
 	}
 	replica := configFromFile.Replica
 	RedisContainerPort = configFromFile.Port
@@ -46,6 +45,9 @@ func ScaleClusterAction(ctx context.Context, masterNum int, clusterName string) 
 			break
 		}
 	}
+	if ClusterNodeIndex == -1 {
+		return fmt.Errorf("cluster with name %s not found", clusterName)
+	}
 	err = clusterManager.UpdateAfterMeet(ctx, containersManager.Nodes[ClusterNodeIndex], clusterName)
 	if err != nil {
 		return fmt.Errorf("init meet Info fail when add shaders %v", err)
@@ -64,7 +66,7 @@ func ScaleClusterAction(ctx context.Context, masterNum int, clusterName string) 
 	if err != nil {
 		return err
 	}
-	println("开始迁移slots ...")
+	fmt.Println("开始迁移slots ...")
 	err = clusterManager.MigratesSlotsToEmptyNode(ctx, clusterName)
 	if err != nil {
 		return err

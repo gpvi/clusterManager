@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 	"github.com/go-redis/redis/v8"
-	"log"
 	"os"
 	"redisStudy/utils"
-	"time"
 )
 
 var cliRedis *redis.Client
@@ -61,15 +59,13 @@ func CreateClusterAction(ctx context.Context, shard int, replica int, clusterNam
 		fmt.Printf("File %s already exists, deleting...\n", ConfigSaveFileName)
 		err := os.Remove(ConfigSaveFileName) // 删除文件
 		if err != nil {
-			log.Fatalf("Error deleting file: %s", err)
-			return err
+			return fmt.Errorf("Error deleting file: %s", err)
 		}
 	}
 	err = utils.WriteToYAMLFile(ConfigSaveFileName, config)
 	if err != nil {
 		return fmt.Errorf("error writing to JSON file %s", err)
 	}
-	time.Sleep(1 * time.Second)
 	err = clusterManager.PrintClusterNodesInfo(ctx)
 	if err != nil {
 		return fmt.Errorf("print cluster nodes Info error :%v", err)
