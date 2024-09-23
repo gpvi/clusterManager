@@ -2,6 +2,10 @@
 
 ## 项目介绍
 此项目在MacOS开发环境下实现了对单个集群的创建、删除以及扩容功能。
+## 文件说明
+- 此项目中环境配置（Redis配置，镜像构建以及项目编译）见文件[INSTALLATION_GUIDE.md](./INSTALLATION_GUIDE.md)
+- 此项目的具体结构设计见文件[DESIGN.md](./DESIGN.md)
+
 ## 使用说明 
 ### 创建集群
 ```shell
