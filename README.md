@@ -12,7 +12,7 @@
 - r: relicaNum, 集群中relica节点的数量，默认为2
 - n: clusterName, 集群的名称，默认为cluster
 
-**example** :
+**Example** :
 ~~~
 ./cluster create -s 3 -r 2 -n test -p
 ~~~
@@ -26,7 +26,7 @@
 参数解释：
 - n: clusterName, 集群的名称，必须显式声明
 
-**example**
+**Example**
 ~~~
 ./cluster delete -n <clusterName>
 ~~~
@@ -42,7 +42,7 @@
 - n: clusterName, 集群的名称，必须显式声明
 - s: shaderNum, 增加集群中shader节点的数量，默认为1
 
-**example:**
+**Example:**
 ~~~
 ./cluster scale -n test -s 3 
 ~~~
