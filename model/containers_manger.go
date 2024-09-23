@@ -2,6 +2,8 @@ package model
 
 import (
 	"context"
+	"encoding/json"
+
 	"fmt"
 	"github.com/containers/common/libnetwork/types"
 	"github.com/containers/podman/v5/libpod/define"
@@ -11,6 +13,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"log"
+	"os"
 	"path/filepath"
 	"redisStudy/utils"
 	"strconv"
@@ -274,6 +277,42 @@ func (c *ContainersManager) UpdateAllContainersInfo(ctx context.Context) error {
 			c.IDToNode[container.ID] = &containerNode      // 更新 ID 映射
 			c.IPToNode[network.IPAddress] = &containerNode // 更新 IP 映射
 		}
+	}
+	return nil
+}
+
+// Function to store container information in JSON format
+func (cm *ContainersManager) SaveToJSON(filename string) error {
+	type ContainerInfo struct {
+		HostIP   string `json:"host_ip"`
+		HostPort uint16 `json:"host_port"`
+		ConIp    string `json:"con_ip"`
+		ConPort  uint16 `json:"con_port"`
+		ID       string `json:"id"`
+		Name     string `json:"name"`
+	}
+
+	var containerInfos []ContainerInfo
+
+	for _, node := range cm.Nodes {
+		containerInfos = append(containerInfos, ContainerInfo{
+			HostIP:   node.HostIP,
+			HostPort: node.HostPort,
+			ConIp:    node.ConIp,
+			ConPort:  node.ConPort,
+			ID:       node.ID,
+			Name:     node.Name,
+		})
+	}
+
+	data, err := json.MarshalIndent(containerInfos, "", "  ")
+	if err != nil {
+		return fmt.Errorf("error marshaling JSON: %w", err)
+	}
+
+	err = os.WriteFile(filename, data, 0644)
+	if err != nil {
+		return fmt.Errorf("error writing to file: %w", err)
 	}
 	return nil
 }

@@ -7,6 +7,7 @@ import (
 
 func TestCreation(t *testing.T) {
 	var err error
+
 	ctx := context.Background()
 	ctx, err = CreatePodmanConnection(ctx)
 	clusterName := "myCluster"

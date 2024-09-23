@@ -555,7 +555,7 @@ func (c *ClusterManager) MigrateSlot(ctx context.Context, slot int, sourceNodeID
 	destNode := c.IDToClusterNode[destNodeID]
 	desCli := CreateRedisClient(ctx, containersManager.IPToNode[destNode.IP].HostIP, containersManager.IPToNode[destNode.IP].HostPort)
 	if _, exist := c.MasterToSlave[sourceNode.ID]; !exist {
-		println(sourceNodeID)
+		return fmt.Errorf("source node %s is not a master node", sourceNodeID)
 	}
 	sourceCli := CreateRedisClient(ctx, containersManager.IPToNode[sourceNode.IP].HostIP, containersManager.IPToNode[sourceNode.IP].HostPort)
 	defer func() {
@@ -564,36 +564,77 @@ func (c *ClusterManager) MigrateSlot(ctx context.Context, slot int, sourceNodeID
 			fmt.Printf("Redsi %v", err)
 		}
 	}()
-	// Step 1: 设置 slot 状态为迁移中 (MIGRATING)
+
+	// Step 1: 在目标节点上接收 slot (IMPORTING)
+	_, err = utils.ExecuteClusterCommand(ctx, desCli, "cluster", "SETSLOT", strconv.Itoa(slot), "IMPORTING", sourceNodeID)
+	if err != nil {
+		return fmt.Errorf("failed to set slot as IMPORTING: %v", err)
+	}
+	//fmt.Printf("Slot %d set to IMPORTING state on destination node\n", slot)
+
+	// Step 2: 设置 slot 状态为迁移中 (MIGRATING)
 	_, err = utils.ExecuteClusterCommand(ctx, sourceCli, "CLUSTER", "SETSLOT", strconv.Itoa(slot), "MIGRATING", destNodeID)
 	if err != nil {
 		return fmt.Errorf("failed to set slot as MIGRATING: %v", err)
 	}
 	//fmt.Printf("Slot %d set to MIGRATING state\n", slot)
 
-	// Step 2: 在目标节点上接收 slot (IMPORTING)
-	_, err = utils.ExecuteClusterCommand(ctx, desCli, "cluster", "SETSLOT", strconv.Itoa(slot), "IMPORTING", destNodeID)
-	if err != nil {
-		return fmt.Errorf("failed to set slot as IMPORTING: %v", err)
-	}
-	//fmt.Printf("Slot %d set to IMPORTING state on destination node\n", slot)
-
 	// Step 3: 迁移 slot 中的数据
 
 	cmdstring := sourceCli.ClusterGetKeysInSlot(ctx, slot, 1000)
 	keys := cmdstring.Val()
 	port := fmt.Sprintf("%v", destNode.Port)
-	for _, key := range keys {
-		_, err := desCli.Migrate(ctx, destNode.IP, port, key, 0, 5000).Result()
-		if err != nil {
-			log.Printf("Failed to migrate key %s: %v", key, err)
-			continue
+	if len(keys) > 0 {
+		// 确定每个批次的大小（总键数的 1/10）
+		chunkSize := len(keys) / 10
+		if chunkSize == 0 {
+			chunkSize = 1 // 确保至少迁移一个键
 		}
-		//fmt.Printf("Migrated key: %s from slot: %d\n", key, slot)
+
+		// 按批次迁移
+		for i := 0; i < len(keys); i += chunkSize {
+			end := i + chunkSize
+			if end > len(keys) {
+				end = len(keys) // 调整结束索引以防超出切片长度
+			}
+
+			// 创建当前批次的切片
+			currentChunk := keys[i:end]
+
+			// 使用 KEYS 参数构建 MIGRATE 命令
+			migrateArgs := []interface{}{destNode.IP, port, "", 0, 5000 * time.Millisecond, "KEYS"}
+
+			// 检查键的存在性并添加到参数中
+			for _, key := range currentChunk {
+				exists, err := sourceCli.Exists(ctx, key).Result()
+				if err != nil {
+					log.Printf("Error checking existence of key %s: %v", key, err)
+					continue
+				}
+				if exists == 0 {
+					log.Printf("Key %s does not exist, skipping migration.", key)
+					continue
+				}
+				migrateArgs = append(migrateArgs, key)
+			}
+
+			// 确保有键可迁移
+			if len(migrateArgs) > 6 { // 6 是 migrateArgs 的基础长度
+				cmd := sourceCli.Do(ctx, append([]interface{}{"MIGRATE"}, migrateArgs...)...)
+				if err := cmd.Err(); err != nil {
+					log.Printf("Failed to migrate keys in chunk starting at index %d: %v", i, err)
+					continue
+				}
+			} else {
+				log.Printf("No valid keys to migrate in chunk starting at index %d.", i)
+			}
+		}
 	}
 
+	//log.Println("Keys migrated successfully.")
+
 	// Step 4: 在目标节点上设置 slot 归属
-	_, err = utils.ExecuteClusterCommand(ctx, desCli, "CLUSTER", "SETSLOT", strconv.Itoa(slot), "NODE", destNodeID)
+	_, err = utils.ExecuteClusterCommand(ctx, desCli, "CLUSTER", "SETSLOT", strconv.Itoa(slot), "NODE", sourceNodeID)
 	if err != nil {
 		return fmt.Errorf("failed to set slot %d to NODE %s on destination: %v", slot, destNodeID, err)
 	}

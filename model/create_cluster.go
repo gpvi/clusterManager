@@ -54,6 +54,12 @@ func CreateClusterAction(ctx context.Context, shard int, replica int, clusterNam
 		Port:    RedisContainerPort,
 	}
 	// 将结构体数据写入 JSON 文件
+	if err := clusterManager.containersManager.SaveToJSON("containers.json"); err != nil {
+		fmt.Println("Error:", err)
+	} else {
+		fmt.Println("Container information saved to containers.json")
+	}
+
 	// 检查文件是否存在
 	if utils.FileExists(ConfigSaveFileName) {
 		fmt.Printf("File %s already exists, deleting...\n", ConfigSaveFileName)
@@ -70,5 +76,6 @@ func CreateClusterAction(ctx context.Context, shard int, replica int, clusterNam
 	if err != nil {
 		return fmt.Errorf("print cluster nodes Info error :%v", err)
 	}
+
 	return nil
 }
