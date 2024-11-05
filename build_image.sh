@@ -1,3 +1,3 @@
 #!/bin/bash
 
-podman build -t myredis -f ./prepareFiles/redisv3.dockerfile
+podman build -t myredis -f ./setup/redisv3.dockerfile

@@ -112,8 +112,9 @@ podman build -t <imagename> -f <dockerfilepath>
 # 进入当前项目目录
 cd reidsManager
 # 安装依赖包
-go mod install
 go mod type 
+go mod download
+go get -u ./...
 ```
 ### 5. 编译项目
 ```
