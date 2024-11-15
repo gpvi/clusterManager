@@ -3,15 +3,16 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"github.com/spf13/cobra"
 	"log"
 	"redisStudy/model"
+
+	"github.com/spf13/cobra"
 )
 
 var shaderNum int
 var replica int
 var clusterName string
-var inputPort uint16
+
 var createCmd = &cobra.Command{
 	Use:   "create",
 	Short: "create a Redis cluster",

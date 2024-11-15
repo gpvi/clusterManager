@@ -31,7 +31,7 @@ type ContainerNode struct {
 }
 
 // CreateRedisClient 初始化和连接一个 Redis 客户端，如果已经存在则检查是否有效。
-func (node *ContainerNode) CreateRedisClient(ctx context.Context) (*redis.Client, error) {
+func (node *ContainerNode) CreateRedisClient() (*redis.Client, error) {
 	// 创建一个新的 Redis 客户端
 	addr := fmt.Sprintf("%s:%d", node.HostIP, node.HostPort)
 	cli := redis.NewClient(&redis.Options{
@@ -194,7 +194,7 @@ func (c *ContainersManager) CreateContainer(ctx context.Context, index int, clus
 }
 
 func (c *ContainersManager) GetCurContainersNum(ctx context.Context) error {
-	// 获取当前 Podman 的容器列表
+	// 获取当前 Podman的容器列表
 	containerList, err := containers.List(ctx, nil)
 	if err != nil {
 		return err

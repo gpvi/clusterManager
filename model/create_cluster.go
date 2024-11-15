@@ -24,8 +24,12 @@ func CreateClusterAction(ctx context.Context, shard int, replica int, clusterNam
 	}
 	clusterManager := NewClusterManager(replica)
 	containersManager := clusterManager.containersManager
+
 	//获取初始化容器信息
 	err = containersManager.GetCurContainersNum(ctx)
+	if err != nil {
+		return fmt.Errorf("get containers num fail: %v", err)
+	}
 	// 判断创建操作是否合法
 	if containersManager.Num != 0 {
 		return fmt.Errorf("already exist containers，please operate after delete  exist containers")

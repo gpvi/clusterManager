@@ -36,7 +36,6 @@ type ClusterManager struct {
 }
 
 func NewClusterManager(replica int) *ClusterManager {
-
 	containersManager := NewContainersManager()
 	clusterManager := ClusterManager{
 		EmptyMasters:      make([]*ClusterNode, 0),
@@ -79,7 +78,10 @@ func (c *ClusterManager) CreateClusterNodes(shared int, ctx context.Context, clu
 				break
 			}
 		}
-		cliRedis, err = c.containersManager.Nodes[meetNodeIndex].CreateRedisClient(ctx)
+		cliRedis, err = c.containersManager.Nodes[meetNodeIndex].CreateRedisClient()
+		if err != nil {
+			return fmt.Errorf("create redis client fail")
+		}
 		defer func() {
 			if err := cliRedis.Close(); err != nil {
 				fmt.Printf("Error closing Redis client: %v\n", err)
@@ -92,6 +94,9 @@ func (c *ClusterManager) CreateClusterNodes(shared int, ctx context.Context, clu
 	}
 	fmt.Println("start Meet...")
 	err = c.MeetNodes(cliRedis, ctx, clusterName)
+	if err != nil {
+		return fmt.Errorf("meet nodes fail %v", err)
+	}
 	err = c.UpdateAfterMeet(ctx, c.containersManager.Nodes[0], clusterName)
 	if err != nil {
 		return err
@@ -116,7 +121,7 @@ func (c *ClusterManager) AddShaders(ctx context.Context, shaderNum int, clusterN
 	// 新节点开始的index
 	c.EmptyMasters = make([]*ClusterNode, 0)
 	newNodeStartIndex := c.containersManager.Num - sum
-	masterToSlave := make(map[string][]string)
+	var masterToSlave = make(map[string][]string)
 	masterToSlave = c.MasterToSlave
 	IDToIP := make(map[string]string)
 	count := 0
@@ -314,7 +319,10 @@ func (c *ClusterManager) MeetNodes(client *redis.Client, ctx context.Context, cl
 		if node.ClusterName != clusterName {
 			continue
 		}
-		cli, err := node.CreateRedisClient(ctx)
+		cli, err := node.CreateRedisClient()
+		if err != nil {
+			return fmt.Errorf("failed to create Redis client for node %s: %v", node.ID, err)
+		}
 		Clients = append(Clients, cli)
 		err = c.waitForMeetSync(cli, ctx, len(nodes))
 		if err != nil {
@@ -417,7 +425,7 @@ func (c *ClusterManager) AddClusterNode(ctx context.Context, clusterName string)
 	}
 
 	// 创建 Redis 客户端并使节点互相发现
-	cliRedis, err := containersManager.Nodes[0].CreateRedisClient(ctx)
+	cliRedis, err := containersManager.Nodes[0].CreateRedisClient()
 	if err != nil {
 		return &ContainerNode{}, fmt.Errorf("create redis client fail")
 	}
@@ -434,45 +442,6 @@ func (c *ClusterManager) AddClusterNode(ctx context.Context, clusterName string)
 
 	newContainerNode := containersManager.Nodes[len(containersManager.Nodes)-1]
 	return newContainerNode, nil
-}
-
-func (c *ClusterManager) addShaderAndReplica(ctx context.Context, clusterName string) (string, error) {
-	var err error
-	// 创建节点
-	newContainers := make([]*ContainerNode, 0)
-	masterNode, err := c.AddClusterNode(ctx, clusterName)
-	newContainers = append(newContainers, masterNode)
-
-	if err != nil {
-		println("error retrieving masterNode: %v", err)
-		return "", fmt.Errorf(err.Error())
-	}
-	mNode := &masterNode
-	if mNode == nil {
-		return "", fmt.Errorf("masterNode is nil, cannot set slaves")
-	}
-
-	var slaveIPs []string
-	// 添加从节点
-	for i := 0; i < (c.Replica - 1); i++ {
-		slaveNode, err := c.AddClusterNode(ctx, clusterName)
-		if err != nil {
-			fmt.Printf(err.Error())
-		}
-		if slaveNode == nil {
-			return "", fmt.Errorf("create slaveNode fail")
-		}
-
-		slaveIPs = append(slaveIPs, slaveNode.ConIp)
-	}
-	// 设置主从关系
-	for _, slaveIP := range slaveIPs {
-		err = c.SetNodeAsSlave(ctx, masterNode.ConIp, slaveIP, clusterName)
-		if err != nil {
-			return "", fmt.Errorf(err.Error())
-		}
-	}
-	return masterNode.ID, err
 }
 
 func (c *ClusterManager) AllocateSlots(ctx context.Context, clusterName string) error {
@@ -650,10 +619,6 @@ func (c *ClusterManager) MigrateSlot(ctx context.Context, slot int, sourceNodeID
 
 func (c *ClusterManager) MigratesSlotsToEmptyNode(ctx context.Context, clusterName string) error {
 	var err error
-	if err != nil {
-		log.Fatalf("Failed to update containers: %v", err)
-		return err
-	}
 
 	if len(c.EmptyMasters) == 0 {
 		return fmt.Errorf("no Empty master")
@@ -662,9 +627,6 @@ func (c *ClusterManager) MigratesSlotsToEmptyNode(ctx context.Context, clusterNa
 	newV := totalSlots / len(c.MasterIDs)
 	// empty master index
 	index := 0
-	if err != nil {
-		return fmt.Errorf("failed to get cluster nodes info: %v", err)
-	}
 	for _, masterID := range c.MasterIDs {
 		masterNode := c.IDToClusterNode[masterID]
 		fromId := masterID
@@ -680,8 +642,9 @@ func (c *ClusterManager) MigratesSlotsToEmptyNode(ctx context.Context, clusterNa
 				start := slot.Start
 				end := slot.End
 				// 将 slots 迁移到空的节点
+				var toId string
 				for i := end; i >= start && index < len(c.EmptyMasters); i-- {
-					toId := c.EmptyMasters[index].ID
+					toId = c.EmptyMasters[index].ID
 					if fromId == toId {
 						break
 					}
@@ -695,7 +658,6 @@ func (c *ClusterManager) MigratesSlotsToEmptyNode(ctx context.Context, clusterNa
 					masterNode.SlotsNum--
 					if c.EmptyMasters[index].SlotsNum == newV {
 						index++
-						toId = c.MasterIDs[index]
 					}
 					if masterNode.SlotsNum == newV {
 						break
@@ -765,7 +727,7 @@ func (c *ClusterManager) verifyNodeTypeSet(ctx context.Context, masterToSlave ma
 			}
 			i++
 			ok := c.equalClusterNodeType(masterToSlave, c.MasterToSlave)
-			if ok == true {
+			if ok {
 				break
 			}
 			fmt.Printf("%v try %v /10 sync fail\n", node.Name, i)
@@ -852,7 +814,7 @@ func (c *ClusterManager) VerifyAllocateSlots(ctx context.Context, containers *Co
 						Flag = true
 					}
 				}
-				if Flag == false {
+				if !Flag {
 					break
 				}
 			}
