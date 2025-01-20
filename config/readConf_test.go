@@ -1,9 +1,10 @@
 package config
 
 import (
-	"gopkg.in/yaml.v2"
 	"os"
 	"testing"
+
+	"gopkg.in/yaml.v2"
 )
 
 //const totalSlots = 16384
@@ -75,4 +76,11 @@ func TestConfig(t *testing.T) {
 		println(err)
 	}
 	config.PrintConfig()
+	// 检查地址是否可访问
+	if _, err := os.Stat(config.RedisHostConfigPath); os.IsNotExist(err) {
+		println("redis host config path not exist %v", err)
+	}
+	if _, err := os.Stat(config.RedisHostDataPath); os.IsNotExist(err) {
+		println("redis host data path not exist %v", err)
+	}
 }

@@ -1,0 +1,50 @@
+[
+  {
+    "host_ip": "127.0.0.1",
+    "host_port": 41729,
+    "con_ip": "10.88.0.3",
+    "con_port": 6379,
+    "id": "6e03467bf6b3d8a575401e108d1a086e1583d36dabc2a06f9ef17520ac6bd8ec",
+    "name": "test-redis-2"
+  },
+  {
+    "host_ip": "127.0.0.1",
+    "host_port": 44169,
+    "con_ip": "10.88.0.4",
+    "con_port": 6379,
+    "id": "9e23b60511e76bdfa05b59a12b3d3439f5f704df5ae595a293ac527aa5a017bf",
+    "name": "test-redis-3"
+  },
+  {
+    "host_ip": "127.0.0.1",
+    "host_port": 43897,
+    "con_ip": "10.88.0.5",
+    "con_port": 6379,
+    "id": "1689913c18e4ef5b19b5199b41a328cafc2b180538b78959dcd517d6096212dc",
+    "name": "test-redis-4"
+  },
+  {
+    "host_ip": "127.0.0.1",
+    "host_port": 36745,
+    "con_ip": "10.88.0.6",
+    "con_port": 6379,
+    "id": "6d357ee46c6915d0fb1c931bdad55b93cb320feefef8c6910c455a494f064127",
+    "name": "test-redis-5"
+  },
+  {
+    "host_ip": "127.0.0.1",
+    "host_port": 45425,
+    "con_ip": "10.88.0.7",
+    "con_port": 6379,
+    "id": "b21859d1cf1360109b050f0543f8eca44fc1118118c48a93a506644ee870fe85",
+    "name": "test-redis-6"
+  },
+  {
+    "host_ip": "127.0.0.1",
+    "host_port": 43381,
+    "con_ip": "10.88.0.2",
+    "con_port": 6379,
+    "id": "f9b46d7fba508e162ef01241787a7e525a5d544882949fce31c132b842a1478b",
+    "name": "test-redis-1"
+  }
+]
