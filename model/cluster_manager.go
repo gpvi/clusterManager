@@ -457,13 +457,13 @@ func (c *ClusterManager) AllocateSlots(ctx context.Context, clusterName string) 
 		println("no current master node to be allocate slots。")
 		return fmt.Errorf("no available master nodes for slot allocation")
 	}
-	slotsPerMaster := totalSlots / numMasters
+	slotsPerMaster := TotalSlots / numMasters
 	for i := 0; i < numMasters; i++ {
 		startPoint := i * slotsPerMaster
 		endPoint := startPoint + slotsPerMaster - 1
 		// 确保最后一个主节点处理剩余槽位
 		if i == numMasters-1 {
-			endPoint = totalSlots - 1
+			endPoint = TotalSlots - 1
 		}
 
 		masterId := c.MasterIDs[i]
@@ -624,7 +624,7 @@ func (c *ClusterManager) MigratesSlotsToEmptyNode(ctx context.Context, clusterNa
 		return fmt.Errorf("no Empty master")
 	}
 
-	newV := totalSlots / len(c.MasterIDs)
+	newV := TotalSlots / len(c.MasterIDs)
 	// empty master index
 	index := 0
 	for _, masterID := range c.MasterIDs {
@@ -805,12 +805,12 @@ func (c *ClusterManager) VerifyAllocateSlots(ctx context.Context, containers *Co
 			}
 			Flag := false
 			for i := 0; i < len(cluster.MasterIDs); i++ {
-				if i == len(cluster.MasterIDs)-1 && totalSlots%len(cluster.MasterIDs) != 0 {
-					if cluster.IDToClusterNode[cluster.MasterIDs[i]].SlotsNum == totalSlots%len(cluster.MasterIDs) {
+				if i == len(cluster.MasterIDs)-1 && TotalSlots%len(cluster.MasterIDs) != 0 {
+					if cluster.IDToClusterNode[cluster.MasterIDs[i]].SlotsNum == TotalSlots%len(cluster.MasterIDs) {
 						Flag = true
 					}
 				} else {
-					if cluster.IDToClusterNode[cluster.MasterIDs[i]].SlotsNum == totalSlots/len(cluster.MasterIDs) {
+					if cluster.IDToClusterNode[cluster.MasterIDs[i]].SlotsNum == TotalSlots/len(cluster.MasterIDs) {
 						Flag = true
 					}
 				}

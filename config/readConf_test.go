@@ -1,42 +1,30 @@
 package config
 
 import (
+	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v2"
 )
 
-//const totalSlots = 16384
-//
-//var True = true
-//
-//// 指定本地的配置文件路径
-//var redisHostConfigPath = "/Users/zhuoqun.niu/Desktop/redis/config"
-//
-//// 容器redis配置路径
-//var redisConfigPath = "/data/redis/config"
-//
-//// 宿主机redis配置路径
-//var redisHostDataPath = "/Users/zhuoqun.niu/Desktop/redis/data"
-//
-//// 容器路径
-//var redisConfigDataPath = "/data/redis/data"
-//
-//// 创建后的配置文件名
-//var ConfigSaveFileName = "redis_cluster_config.json"
-
-// Config holds the YAML file structure
+// Config holds the YAML structure
 type Config struct {
-	RedisHostConfigPath string `yaml:"redis_host_config_path"`
-	RedisConfigPath     string `yaml:"redis_config_path"`
-	RedisHostDataPath   string `yaml:"redis_host_data_path"`
-	RedisConfigDataPath string `yaml:"redis_config_data_path"`
-	ConfigSaveFileName  string `yaml:"configs_save_file_name"`
-	ImageName           string `yaml:"image_name"`
+	UserName string `yaml:"user_name"`
+	Paths    struct {
+		RedisHostConfigPath string `yaml:"redis_host_config_path"`
+		RedisConfigPath     string `yaml:"redis_config_path"`
+		RedisHostDataPath   string `yaml:"redis_host_data_path"`
+		RedisConfigDataPath string `yaml:"redis_config_data_path"`
+	} `yaml:"paths"`
+	Configs struct {
+		SaveFileName string `yaml:"save_file_name"`
+		ImageName    string `yaml:"image_name"`
+	} `yaml:"configs"`
 }
 
-// ReadYAML reads the YAML file and returns a Config struct
+// ReadYAML reads and parses the YAML file into a Config struct
 func ReadYAML(filePath string) (*Config, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
@@ -49,38 +37,58 @@ func ReadYAML(filePath string) (*Config, error) {
 		return nil, err
 	}
 
+	// Replace placeholders with actual values
+	replaceVariables(&config)
+
 	return &config, nil
 }
-func NewConfig() *Config {
-	return &Config{
-		RedisHostConfigPath: "",
-		RedisConfigPath:     "",
-		RedisHostDataPath:   "",
-		RedisConfigDataPath: "",
-		ConfigSaveFileName:  "",
-		ImageName:           "",
+
+// replaceVariables replaces placeholders in the Config struct
+func replaceVariables(config *Config) {
+	placeholders := map[string]string{
+		"${user_name}": config.UserName,
 	}
+
+	config.Paths.RedisHostConfigPath = replacePlaceholders(config.Paths.RedisHostConfigPath, placeholders)
+	config.Paths.RedisHostDataPath = replacePlaceholders(config.Paths.RedisHostDataPath, placeholders)
 }
+
+// replacePlaceholders replaces placeholders in a string
+func replacePlaceholders(input string, placeholders map[string]string) string {
+	for placeholder, value := range placeholders {
+		input = strings.ReplaceAll(input, placeholder, value)
+	}
+	return input
+}
+
+// PrintConfig prints the entire configuration for debugging
 func (c *Config) PrintConfig() {
-	println(c.RedisConfigPath)
-	println(c.RedisHostConfigPath)
-	println(c.RedisHostDataPath)
-	println(c.RedisConfigDataPath)
-	println(c.ConfigSaveFileName)
-	println(c.ImageName)
+	fmt.Println("UserName:", c.UserName)
+	fmt.Println("Paths:")
+	fmt.Println("  RedisHostConfigPath:", c.Paths.RedisHostConfigPath)
+	fmt.Println("  RedisConfigPath:", c.Paths.RedisConfigPath)
+	fmt.Println("  RedisHostDataPath:", c.Paths.RedisHostDataPath)
+	fmt.Println("  RedisConfigDataPath:", c.Paths.RedisConfigDataPath)
+	fmt.Println("Configs:")
+	fmt.Println("  SaveFileName:", c.Configs.SaveFileName)
+	fmt.Println("  ImageName:", c.Configs.ImageName)
 }
+
+// TestConfig demonstrates reading and using the YAML configuration
 func TestConfig(t *testing.T) {
-	config := NewConfig()
 	config, err := ReadYAML("./conf.yaml")
 	if err != nil {
-		println(err)
+		fmt.Println("Error reading YAML file:", err)
+		return
 	}
+
 	config.PrintConfig()
-	// 检查地址是否可访问
-	if _, err := os.Stat(config.RedisHostConfigPath); os.IsNotExist(err) {
-		println("redis host config path not exist %v", err)
+
+	// Check if paths exist
+	if _, err := os.Stat(config.Paths.RedisHostConfigPath); os.IsNotExist(err) {
+		fmt.Printf("Redis host config path does not exist: %s\n", config.Paths.RedisHostConfigPath)
 	}
-	if _, err := os.Stat(config.RedisHostDataPath); os.IsNotExist(err) {
-		println("redis host data path not exist %v", err)
+	if _, err := os.Stat(config.Paths.RedisHostDataPath); os.IsNotExist(err) {
+		fmt.Printf("Redis host data path does not exist: %s\n", config.Paths.RedisHostDataPath)
 	}
 }

@@ -1,6 +1,11 @@
-redis_host_config_path: "/Users/zhuoqun.niu/code/cycle1-clustermanager/setup/redis/config"
-redis_config_path: "/data/redis/config"
-redis_host_data_path: "/Users/zhuoqun.niu/code/cycle1-clustermanager/setup/redis/data"
-redis_config_data_path: "/data/redis/data"
-configs_save_file_name: "run_time_config.yaml"
-image_name: "myredis"
+user_name: "zhuoqun.niu"
+
+paths:
+  redis_host_config_path: "/Users/${user_name}/code/cycle1-clustermanager/setup/redis/config"
+  redis_config_path: "/data/redis/config"
+  redis_host_data_path: "/Users/${user_name}/code/cycle1-clustermanager/setup/redis/data"
+  redis_config_data_path: "/data/redis/data"
+
+configs:
+  save_file_name: "run_time_config.yaml"
+  image_name: "myredis"
