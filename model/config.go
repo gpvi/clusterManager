@@ -1,8 +1,10 @@
 package model
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"redisStudy/utils"
@@ -13,6 +15,10 @@ import (
 const TotalSlots int = 16384
 
 var True = true
+
+var runPodmanConnectionList = func() ([]byte, error) {
+	return exec.Command("podman", "system", "connection", "list", "--format", "json").Output()
+}
 
 // 全局变量，用于存储配置数据
 var (
@@ -210,6 +216,9 @@ func defaultPodmanEndpoint() string {
 	if v := os.Getenv("CONTAINER_HOST"); v != "" {
 		return v
 	}
+	if endpoint, err := defaultPodmanEndpointFromConnectionList(); err == nil && endpoint != "" {
+		return endpoint
+	}
 
 	switch runtime.GOOS {
 	case "windows":
@@ -230,6 +239,32 @@ func defaultPodmanEndpoint() string {
 	}
 
 	return ""
+}
+
+type podmanConnectionInfo struct {
+	URI     string `json:"URI"`
+	Default bool   `json:"Default"`
+}
+
+func defaultPodmanEndpointFromConnectionList() (string, error) {
+	data, err := runPodmanConnectionList()
+	if err != nil {
+		return "", err
+	}
+	return parseDefaultPodmanConnectionURI(data)
+}
+
+func parseDefaultPodmanConnectionURI(data []byte) (string, error) {
+	var connections []podmanConnectionInfo
+	if err := json.Unmarshal(data, &connections); err != nil {
+		return "", err
+	}
+	for _, connection := range connections {
+		if connection.Default && connection.URI != "" {
+			return connection.URI, nil
+		}
+	}
+	return "", nil
 }
 
 // NewConfig 创建一个新的配置对象

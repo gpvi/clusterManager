@@ -6,7 +6,7 @@ paths:
   runtime_state_dir: "runtime"
 
 podman:
-  endpoint: "npipe://\\\\.\\pipe\\podman-machine-default"
+  endpoint: ""
   network_name: "podman"
 
 configs:

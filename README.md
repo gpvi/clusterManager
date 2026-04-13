@@ -7,6 +7,14 @@
 - 此项目的具体结构设计见文件[DESIGN.md](./DESIGN.md)
 - 为了方便回顾，已补充整理文档到 [docs/00-项目总览.md](./docs/00-项目总览.md)
 
+## 编译提示
+由于 `github.com/containers/podman/v5` 的依赖链在部分环境下会要求本地安装 `gpgme`，日常构建与测试建议统一使用 `containers_image_openpgp` tag，避免额外安装原生库：
+
+```shell
+go build -tags containers_image_openpgp -o cluster .
+go test -tags containers_image_openpgp ./...
+```
+
 ## 回顾导航
 - [项目总览](./docs/00-项目总览.md)
 - [架构与目录](./docs/01-架构与目录.md)

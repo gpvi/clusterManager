@@ -118,8 +118,15 @@ go get -u ./...
 ```
 ### 5. 编译项目
 ```
-go build -o cluster
+go build -tags containers_image_openpgp -o cluster .
 ```
 编译完成后在根目录会出现如下文件：
 
 ![./img/img.png](img/img.png)
+
+### 6. 测试项目
+为避免本地额外安装 `gpgme`，建议测试时同样带上 `containers_image_openpgp` tag：
+
+```shell
+go test -tags containers_image_openpgp ./...
+```

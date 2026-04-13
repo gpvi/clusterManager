@@ -79,9 +79,6 @@ func TestConfig(t *testing.T) {
 
 	config.PrintConfig()
 
-	if config.Podman.Endpoint == "" {
-		t.Fatalf("podman endpoint should not be empty")
-	}
 	if config.Configs.ImageName == "" {
 		t.Fatalf("image name should not be empty")
 	}
