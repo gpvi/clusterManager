@@ -31,6 +31,8 @@ var (
 	ContainerInfoFile   string
 	ConfigSaveFileName  string
 	PodmanEndpoint      string
+	PodmanIdentity      string
+	PodmanMachine       bool
 	PodmanNetworkName   string
 	imageName           string
 	RedisContainerPort  uint16 = 6379
@@ -180,17 +182,29 @@ func (c *Config) loadFromEnv() {
 
 // resolvePaths 将所有相对路径转换为基于项目根目录的绝对路径
 func (c *Config) resolvePaths(root string) {
-	c.Paths.RedisHostConfigPath = resolveAbsPath(root, c.Paths.RedisHostConfigPath)
-	c.Paths.RedisHostDataPath = resolveAbsPath(root, c.Paths.RedisHostDataPath)
-	c.Paths.RuntimeStateDir = resolveAbsPath(root, c.Paths.RuntimeStateDir)
+	c.Paths.RedisHostConfigPath = resolveContainerHostPath(root, c.Paths.RedisHostConfigPath)
+	c.Paths.RedisHostDataPath = resolveContainerHostPath(root, c.Paths.RedisHostDataPath)
+	c.Paths.RuntimeStateDir = resolveLocalAbsPath(root, c.Paths.RuntimeStateDir)
 }
 
-// resolveAbsPath 如果是相对路径，则返回相对于 root 的绝对路径
-func resolveAbsPath(root, p string) string {
+// resolveContainerHostPath 允许保留 Linux 风格绝对路径，便于 Windows 客户端连接 Linux Podman machine。
+func resolveContainerHostPath(root, p string) string {
+	if isUnixStyleAbsPath(p) {
+		return p
+	}
+	return resolveLocalAbsPath(root, p)
+}
+
+// resolveLocalAbsPath 如果是本地相对路径，则返回相对于 root 的绝对路径。
+func resolveLocalAbsPath(root, p string) string {
 	if filepath.IsAbs(p) || p == "" {
 		return p
 	}
 	return filepath.Join(root, p)
+}
+
+func isUnixStyleAbsPath(p string) bool {
+	return len(p) > 0 && p[0] == '/'
 }
 
 func resolveStateFilePath(root, name string) string {
@@ -242,8 +256,11 @@ func defaultPodmanEndpoint() string {
 }
 
 type podmanConnectionInfo struct {
-	URI     string `json:"URI"`
-	Default bool   `json:"Default"`
+	Name      string `json:"Name"`
+	URI       string `json:"URI"`
+	Identity  string `json:"Identity"`
+	IsMachine bool   `json:"IsMachine"`
+	Default   bool   `json:"Default"`
 }
 
 func defaultPodmanEndpointFromConnectionList() (string, error) {
@@ -251,20 +268,34 @@ func defaultPodmanEndpointFromConnectionList() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return parseDefaultPodmanConnectionURI(data)
+	connection, err := parseDefaultPodmanConnection(data)
+	if err != nil {
+		return "", err
+	}
+	return connection.URI, nil
 }
 
 func parseDefaultPodmanConnectionURI(data []byte) (string, error) {
+	connection, err := parseDefaultPodmanConnection(data)
+	if err != nil {
+		return "", err
+	}
+	return connection.URI, nil
+}
+
+func parseDefaultPodmanConnection(data []byte) (podmanConnectionInfo, error) {
 	var connections []podmanConnectionInfo
 	if err := json.Unmarshal(data, &connections); err != nil {
-		return "", err
+		return podmanConnectionInfo{}, err
 	}
 	for _, connection := range connections {
 		if connection.Default && connection.URI != "" {
-			return connection.URI, nil
+			PodmanIdentity = connection.Identity
+			PodmanMachine = connection.IsMachine
+			return connection, nil
 		}
 	}
-	return "", nil
+	return podmanConnectionInfo{}, nil
 }
 
 // NewConfig 创建一个新的配置对象

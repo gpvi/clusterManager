@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path"
 	"path/filepath"
 	"redisStudy/utils"
 	"strconv"
@@ -19,6 +20,11 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/opencontainers/runtime-spec/specs-go"
 )
+
+var createPodmanBindingsConnection = func(ctx context.Context, uri, identity string, machine bool) (context.Context, error) {
+	return bindings.NewConnectionWithIdentity(ctx, uri, identity, machine)
+}
+var initializeRuntimeConfig = InitConfig
 
 type ContainerNode struct {
 	Name        string // 容器名
@@ -133,7 +139,7 @@ func (c *ContainersManager) CreateContainers(ctx context.Context, nodeNum int, c
 			return fmt.Errorf("failed to parse host port for container %s: %v", id, err)
 		}
 
-		conIP := ""
+		conIP := inspect.NetworkSettings.IPAddress
 		if network, ok := inspect.NetworkSettings.Networks[PodmanNetworkName]; ok {
 			conIP = network.IPAddress
 		}
@@ -168,9 +174,13 @@ func (c *ContainersManager) CreateContainers(ctx context.Context, nodeNum int, c
 
 // CreateContainer 创建容器
 func (c *ContainersManager) CreateContainer(ctx context.Context, index int, clusterName string) (string, error) {
-	startConfigPath := filepath.Join(RedisConfigPath, "redis.conf")
+	startConfigPath := path.Join(RedisConfigPath, "redis.conf")
 	s := specgen.NewSpecGenerator(imageName, false)
 	s.Name = fmt.Sprintf("%v-redis-%d", clusterName, index)
+	s.NetNS.NSMode = specgen.Bridge
+	s.Networks = map[string]types.PerNetworkOptions{
+		PodmanNetworkName: {},
+	}
 	s.Mounts = []specs.Mount{
 		{
 			Source:      RedisHostConfigPath,
@@ -240,11 +250,11 @@ func (c *ContainersManager) GetCurContainersNum(ctx context.Context) error {
 // CreatePodmanConnection 创建连接
 func CreatePodmanConnection(ctx context.Context) (context.Context, error) {
 	if PodmanEndpoint == "" {
-		if err := InitConfig(); err != nil {
+		if err := initializeRuntimeConfig(); err != nil {
 			return ctx, fmt.Errorf("init config fail:%v", err)
 		}
 	}
-	conn, err := bindings.NewConnection(ctx, PodmanEndpoint)
+	conn, err := createPodmanBindingsConnection(ctx, PodmanEndpoint, PodmanIdentity, PodmanMachine)
 	if err != nil {
 		return ctx, fmt.Errorf("create podman conection fail:%v ", err)
 	}
@@ -313,7 +323,7 @@ func (c *ContainersManager) UpdateAllContainersInfo(ctx context.Context) error {
 			return fmt.Errorf("failed to find mapped redis port for container %s", container.ID)
 		}
 
-		containerIP := ""
+		containerIP := inspect.NetworkSettings.IPAddress
 		if network, ok := inspect.NetworkSettings.Networks[PodmanNetworkName]; ok {
 			containerIP = network.IPAddress
 		}
