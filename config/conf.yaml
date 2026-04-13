@@ -1,0 +1,16 @@
+paths:
+  redis_host_config_path: "setup/redis/config"
+  redis_config_path: "/data/redis/config"
+  redis_host_data_path: "setup/redis/data"
+  redis_config_data_path: "/data/redis/data"
+  runtime_state_dir: "runtime"
+
+podman:
+  endpoint: "npipe://\\\\.\\pipe\\podman-machine-default"
+  network_name: "podman"
+
+configs:
+  save_file_name: "run_time_config.yaml"
+  container_info_file_name: "containers.json"
+  image_name: "myredis"
+  redis_port: 6379

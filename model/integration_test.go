@@ -1,0 +1,16 @@
+//go:build integration
+// +build integration
+
+package model
+
+import (
+	"os"
+	"testing"
+)
+
+func requireIntegrationTest(t *testing.T) {
+	t.Helper()
+	if os.Getenv("CLUSTER_RUN_INTEGRATION_TESTS") != "1" {
+		t.Skip("set CLUSTER_RUN_INTEGRATION_TESTS=1 to run Podman integration tests")
+	}
+}

@@ -1,0 +1,26 @@
+//go:build integration
+// +build integration
+
+package model
+
+import (
+	"context"
+	"testing"
+)
+
+func TestCreation(t *testing.T) {
+	requireIntegrationTest(t)
+
+	var err error
+	ctx := context.Background()
+	ctx, err = CreatePodmanConnection(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clusterName := "myCluster"
+	RedisContainerPort = 6379
+	err = CreateClusterAction(ctx, 3, 2, clusterName)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
