@@ -157,6 +157,30 @@ func (c *RedisClusterController) buildRuntimeConfig(cr *v1.RedisCluster) *model.
 	return cfg
 }
 
+// buildNodeStatus constructs a slice of v1.NodeStatus from cluster nodes.
+func buildNodeStatus(clusterNodes []model.ClusterNode) []v1.NodeStatus {
+	var result []v1.NodeStatus
+	for _, cn := range clusterNodes {
+		ns := v1.NodeStatus{
+			ID:       cn.ID,
+			IP:       cn.IP,
+			Port:     cn.Port,
+			Role:     cn.NodeType,
+			MasterID: cn.MasterID,
+			Healthy:  cn.LinkState == "connected",
+		}
+		for _, slot := range cn.Slots {
+			if slot.Start == slot.End {
+				ns.Slots = append(ns.Slots, fmt.Sprintf("%d", slot.Start))
+			} else {
+				ns.Slots = append(ns.Slots, fmt.Sprintf("%d-%d", slot.Start, slot.End))
+			}
+		}
+		result = append(result, ns)
+	}
+	return result
+}
+
 // ---------------------------------------------------------------------------
 // Reconcile
 // ---------------------------------------------------------------------------
@@ -263,7 +287,9 @@ func (c *RedisClusterController) handleCreating(ctx context.Context, cr *v1.Redi
 	// 5. Set master / slave roles (idempotent).
 	if err := clusterManager.SetAllNodeRole(ctx, cr.Name); err != nil {
 		cr.Status.Phase = v1.PhaseDegraded
-		_ = c.updateStatus(ctx, cr) // best-effort
+		if err := c.updateStatus(ctx, cr); err != nil {
+			return fmt.Errorf("failed to update status for %s: %w", cr.Name, err)
+		}
 		return fmt.Errorf("set node roles failed for cluster %s: %w", cr.Name, err)
 	}
 
@@ -273,7 +299,9 @@ func (c *RedisClusterController) handleCreating(ctx context.Context, cr *v1.Redi
 		log.Printf("cluster %s: allocating slots for %d empty masters", cr.Name, len(clusterManager.EmptyMasters))
 		if err := clusterManager.AllocateSlots(ctx, cr.Name); err != nil {
 			cr.Status.Phase = v1.PhaseDegraded
-			_ = c.updateStatus(ctx, cr)
+			if err := c.updateStatus(ctx, cr); err != nil {
+				return fmt.Errorf("failed to update status for %s: %w", cr.Name, err)
+			}
 			return fmt.Errorf("allocate slots failed for cluster %s: %w", cr.Name, err)
 		}
 	} else {
@@ -311,7 +339,9 @@ func (c *RedisClusterController) handleReady(ctx context.Context, cr *v1.RedisCl
 		log.Printf("health check: cluster %s has %d/%d pods available -> Degraded",
 			cr.Name, nodeManager.CountByCluster(cr.Name), expectedNodes)
 		cr.Status.Phase = v1.PhaseDegraded
-		_ = c.updateStatus(ctx, cr)
+		if err := c.updateStatus(ctx, cr); err != nil {
+			return fmt.Errorf("failed to update status for %s: %w", cr.Name, err)
+		}
 		return nil
 	}
 
@@ -325,7 +355,9 @@ func (c *RedisClusterController) handleReady(ctx context.Context, cr *v1.RedisCl
 	}
 	if loginNode == nil {
 		cr.Status.Phase = v1.PhaseDegraded
-		_ = c.updateStatus(ctx, cr)
+		if err := c.updateStatus(ctx, cr); err != nil {
+			return fmt.Errorf("failed to update status for %s: %w", cr.Name, err)
+		}
 		return nil
 	}
 
@@ -334,7 +366,9 @@ func (c *RedisClusterController) handleReady(ctx context.Context, cr *v1.RedisCl
 	if err != nil {
 		log.Printf("health check: cannot connect to %s/%s: %v", cr.Namespace, cr.Name, err)
 		cr.Status.Phase = v1.PhaseDegraded
-		_ = c.updateStatus(ctx, cr)
+		if err := c.updateStatus(ctx, cr); err != nil {
+			return fmt.Errorf("failed to update status for %s: %w", cr.Name, err)
+		}
 		return nil
 	}
 	defer redisClient.Close()
@@ -343,7 +377,9 @@ func (c *RedisClusterController) handleReady(ctx context.Context, cr *v1.RedisCl
 	if err != nil {
 		log.Printf("health check: CLUSTER NODES failed for %s/%s: %v", cr.Namespace, cr.Name, err)
 		cr.Status.Phase = v1.PhaseDegraded
-		_ = c.updateStatus(ctx, cr)
+		if err := c.updateStatus(ctx, cr); err != nil {
+			return fmt.Errorf("failed to update status for %s: %w", cr.Name, err)
+		}
 		return nil
 	}
 
@@ -356,35 +392,14 @@ func (c *RedisClusterController) handleReady(ctx context.Context, cr *v1.RedisCl
 	// 4. Evaluate health.
 	allHealthy := true
 	masterCount := 0
-	statusNodes := make([]v1.NodeStatus, 0, len(nodes))
-	for _, n := range nodes {
-		if n.NodeType == model.Master {
+	statusNodes := buildNodeStatus(nodes)
+	for _, ns := range statusNodes {
+		if ns.Role == model.Master {
 			masterCount++
 		}
-		// A node is healthy when it is connected and does not carry a "fail" flag.
-		healthy := n.LinkState == "connected" && !containsFailFlag(n.AdditionalFlags)
-		if !healthy {
+		if !ns.Healthy {
 			allHealthy = false
 		}
-
-		slotStrs := make([]string, len(n.Slots))
-		for i, s := range n.Slots {
-			if s.Start == s.End {
-				slotStrs[i] = fmt.Sprintf("%d", s.Start)
-			} else {
-				slotStrs[i] = fmt.Sprintf("%d-%d", s.Start, s.End)
-			}
-		}
-
-		statusNodes = append(statusNodes, v1.NodeStatus{
-			ID:       n.ID,
-			IP:       n.IP,
-			Port:     n.Port,
-			Role:     n.NodeType,
-			MasterID: n.MasterID,
-			Slots:    slotStrs,
-			Healthy:  healthy,
-		})
 	}
 
 	cr.Status.MasterCount = masterCount
@@ -477,32 +492,14 @@ func (c *RedisClusterController) handleDegraded(ctx context.Context, cr *v1.Redi
 
 	allHealthy := true
 	masterCount := 0
-	statusNodes := make([]v1.NodeStatus, 0, len(nodes))
-	for _, n := range nodes {
-		if n.NodeType == model.Master {
+	statusNodes := buildNodeStatus(nodes)
+	for _, ns := range statusNodes {
+		if ns.Role == model.Master {
 			masterCount++
 		}
-		healthy := n.LinkState == "connected" && !containsFailFlag(n.AdditionalFlags)
-		if !healthy {
+		if !ns.Healthy {
 			allHealthy = false
 		}
-		slotStrs := make([]string, len(n.Slots))
-		for i, s := range n.Slots {
-			if s.Start == s.End {
-				slotStrs[i] = fmt.Sprintf("%d", s.Start)
-			} else {
-				slotStrs[i] = fmt.Sprintf("%d-%d", s.Start, s.End)
-			}
-		}
-		statusNodes = append(statusNodes, v1.NodeStatus{
-			ID:       n.ID,
-			IP:       n.IP,
-			Port:     n.Port,
-			Role:     n.NodeType,
-			MasterID: n.MasterID,
-			Slots:    slotStrs,
-			Healthy:  healthy,
-		})
 	}
 
 	cr.Status.MasterCount = masterCount

@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -85,30 +86,46 @@ func (s *clusterServer) CreateCluster(ctx context.Context, req *pb.CreateCluster
 func (s *clusterServer) CreateClusterWithProgress(req *pb.CreateClusterRequest, stream pb.RedisClusterService_CreateClusterWithProgressServer) error {
 	ctx := stream.Context()
 	name := req.GetName()
+	ns := s.cfg.KubeNamespace
 
-	send := func(phase string, completed, total int32, msg string) {
-		stream.Send(&pb.CreateProgress{
-			Phase:     phase,
-			Completed: completed,
-			Total:     total,
-			Message:   msg,
-		})
-	}
-
-	send("CreatingCR", 0, 4, "Creating RedisCluster CR")
 	_, err := s.CreateCluster(ctx, req)
 	if err != nil {
 		return err
 	}
-	send("CRCreated", 1, 4, "CR created, waiting for operator")
 
-	time.Sleep(3 * time.Second)
-	send("PodsCreating", 2, 4, "Operator creating pods")
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	timeout := time.After(10 * time.Minute)
+	var lastPhase string
 
-	time.Sleep(3 * time.Second)
-	send("Ready", 4, 4, fmt.Sprintf("Cluster %s is ready", name))
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timeout:
+			return status.Error(codes.DeadlineExceeded, "cluster creation timed out")
+		case <-ticker.C:
+			cr, err := s.dynamicClient.Resource(gvr).Namespace(ns).Get(ctx, name, metav1.GetOptions{})
+			if err != nil {
+				return err
+			}
+			st, _, _ := unstructured.NestedMap(cr.Object, "status")
+			phase, _, _ := unstructured.NestedString(st, "phase")
+			mc, _, _ := unstructured.NestedInt64(st, "masterCount")
+			tn, _, _ := unstructured.NestedInt64(st, "totalNodes")
 
-	return nil
+			if phase != lastPhase {
+				lastPhase = phase
+				stream.Send(&pb.CreateProgress{
+					Phase: phase, Completed: int32(mc), Total: int32(tn),
+					Message: fmt.Sprintf("Phase: %s, masters: %d, nodes: %d", phase, mc, tn),
+				})
+			}
+			if phase == "Ready" || phase == "Degraded" {
+				return nil
+			}
+		}
+	}
 }
 
 func (s *clusterServer) GetStatus(ctx context.Context, req *pb.GetStatusRequest) (*pb.GetStatusResponse, error) {
@@ -287,12 +304,8 @@ func (s *clusterServer) GetEvents(ctx context.Context, req *pb.GetEventsRequest)
 
 	var result []*pb.EventInfo
 	for _, evt := range events.Items {
-		if evt.InvolvedObject.Name == name || evt.InvolvedObject.Name == "" {
+		if !strings.Contains(evt.InvolvedObject.Name, name) {
 			continue
-		}
-		// Filter events related to this cluster by checking labels or name prefix
-		if len(evt.InvolvedObject.Name) >= len(name) && evt.InvolvedObject.Name[:len(name)] != name {
-			// Simple check: skip if the involved object name doesn't start with cluster name
 		}
 		result = append(result, &pb.EventInfo{
 			Type:      evt.Type,
