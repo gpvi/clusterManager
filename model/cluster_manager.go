@@ -51,53 +51,6 @@ func NewClusterManager(nodesPerShard int, nodeManager *K8sNodeManager) *ClusterM
 	return &clusterManager
 }
 
-func (c *ClusterManager) CreateCluster(shardCount int, ctx context.Context, clusterName string) error {
-	var err error
-	sum := shardCount * c.NodesPerShard
-	err = c.CreateSource(ctx, clusterName, sum)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("finish created, %d shards, %d nodes per shard ", shardCount, c.NodesPerShard)
-	meetNodeIndex := 0
-	var cliRedis *redis.Client
-	if len(c.nodeManager.Nodes) > 0 {
-		for ; meetNodeIndex < len(c.nodeManager.Nodes); meetNodeIndex++ {
-			if c.nodeManager.Nodes[meetNodeIndex].ClusterName == clusterName {
-				break
-			}
-		}
-		if meetNodeIndex >= len(c.nodeManager.Nodes) {
-			return fmt.Errorf("no node found for cluster %s", clusterName)
-		}
-		cliRedis, err = c.nodeManager.Nodes[meetNodeIndex].CreateRedisClient()
-		if err != nil {
-			return fmt.Errorf("create redis client fail")
-		}
-		defer func() {
-			if err := cliRedis.Close(); err != nil {
-				fmt.Printf("Error closing Redis client: %v\n", err)
-			}
-		}()
-
-	} else {
-		fmt.Println("No pods available.")
-	}
-	fmt.Println("start Meet...")
-	if cliRedis == nil {
-		return fmt.Errorf("no cluster node found for meeting")
-	}
-	err = c.MeetNodes(cliRedis, ctx, clusterName)
-	if err != nil {
-		return fmt.Errorf("meet nodes fail %v", err)
-	}
-	err = c.UpdateAfterMeet(ctx, c.nodeManager.Nodes[meetNodeIndex], clusterName)
-	if err != nil {
-		return err
-	}
-	return err
-}
-
 func (c *ClusterManager) CreateSource(ctx context.Context, clusterName string, sum int) error {
 	var err error
 	err = c.nodeManager.CreatePods(ctx, sum, clusterName)
@@ -180,7 +133,30 @@ func (c *ClusterManager) GetContainerNum() int {
 func (c *ClusterManager) AddShards(ctx context.Context, shardCount int, clusterName string) error {
 	var err error
 	sum := shardCount * c.NodesPerShard
-	err = c.CreateCluster(shardCount, ctx, clusterName)
+	err = c.CreateSource(ctx, clusterName, sum)
+	if err != nil {
+		return err
+	}
+	// Find a login node for meeting
+	meetNodeIndex := 0
+	for ; meetNodeIndex < c.nodeManager.Num-sum; meetNodeIndex++ {
+		if c.nodeManager.Nodes[meetNodeIndex].ClusterName == clusterName {
+			break
+		}
+	}
+	if meetNodeIndex >= c.nodeManager.Num-sum {
+		return fmt.Errorf("no existing node found for cluster %s", clusterName)
+	}
+	cliRedis, err := c.nodeManager.Nodes[meetNodeIndex].CreateRedisClient()
+	if err != nil {
+		return fmt.Errorf("create redis client fail: %w", err)
+	}
+	defer cliRedis.Close()
+	err = c.MeetNodes(cliRedis, ctx, clusterName)
+	if err != nil {
+		return fmt.Errorf("meet nodes fail: %w", err)
+	}
+	err = c.UpdateAfterMeet(ctx, c.nodeManager.Nodes[meetNodeIndex], clusterName)
 	if err != nil {
 		return err
 	}

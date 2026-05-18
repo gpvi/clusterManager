@@ -12,15 +12,11 @@ const (
 	Kind         = "RedisCluster"
 	ResourceName = "redisclusters"
 
-	PhasePending   = "Pending"
 	PhaseCreating  = "Creating"
 	PhaseReady     = "Ready"
 	PhaseDegraded  = "Degraded"
-	PhaseDeleting  = "Deleting"
 
 	SlotBalanced    = "balanced"
-	SlotMigrating   = "migrating"
-	SlotUnbalanced  = "unbalanced"
 )
 
 var GroupVersion = schema.GroupVersion{Group: GroupName, Version: Version}
