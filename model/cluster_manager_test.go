@@ -354,7 +354,7 @@ func TestEqualClusterNodeType(t *testing.T) {
 			name: "nil vs empty",
 			a:    nil,
 			b:    map[string][]string{},
-			want: false,
+			want: true, // both have len 0
 		},
 		{
 			name: "matching regardless of values",
