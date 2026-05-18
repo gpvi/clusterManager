@@ -106,7 +106,7 @@ func CreateClusterAction(ctx context.Context, cfg *RuntimeConfig, shardCount int
 	}
 	err = utils.WriteToYAMLFile(runtimeConfigPath, config)
 	if err != nil {
-		return fmt.Errorf("error writing to JSON file %s", err)
+		return fmt.Errorf("error writing to YAML file %s", err)
 	}
 	err = clusterManager.PrintClusterNodesInfo(ctx)
 	if err != nil {

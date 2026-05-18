@@ -301,6 +301,12 @@ func (c *K8sNodeManager) createServiceForPod(ctx context.Context, pod *corev1.Po
 					TargetPort: intstr.FromInt(int(c.config.RedisContainerPort)),
 					Protocol:   corev1.ProtocolTCP,
 				},
+				{
+					Name:       "cluster-bus",
+					Port:       int32(c.config.RedisContainerPort + 10000),
+					TargetPort: intstr.FromInt(int(c.config.RedisContainerPort + 10000)),
+					Protocol:   corev1.ProtocolTCP,
+				},
 			},
 		},
 	}
@@ -355,9 +361,6 @@ func (c *K8sNodeManager) ListPodsByCluster(ctx context.Context, clusterName stri
 	}
 
 	for _, pod := range podList.Items {
-		if _, exist := c.PodSet[pod.Name]; exist {
-			continue
-		}
 		if pod.Status.Phase != corev1.PodRunning || pod.Status.PodIP == "" {
 			continue
 		}
@@ -369,10 +372,10 @@ func (c *K8sNodeManager) ListPodsByCluster(ctx context.Context, clusterName stri
 			return fmt.Errorf("failed to list services for pod %s: %w", pod.Name, err)
 		}
 
-		var hostPort uint16
-		if len(svcList.Items) > 0 {
-			hostPort = uint16(svcList.Items[0].Spec.Ports[0].NodePort)
+		if len(svcList.Items) == 0 || svcList.Items[0].Spec.Ports[0].NodePort == 0 {
+			continue
 		}
+		hostPort := uint16(svcList.Items[0].Spec.Ports[0].NodePort)
 
 		node := RuntimeNode{
 			Name:        pod.Name,

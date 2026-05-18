@@ -64,7 +64,7 @@ func ScaleClusterAction(ctx context.Context, cfg *RuntimeConfig, additionalShard
 	if err != nil {
 		return err
 	}
-	fmt.Println("开始迁移slots ...")
+	fmt.Println("starting slot migration...")
 	err = clusterManager.MigratesSlotsToEmptyNode(ctx, clusterName)
 	if err != nil {
 		return err

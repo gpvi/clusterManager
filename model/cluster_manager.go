@@ -466,7 +466,7 @@ func (c *ClusterManager) PrintClusterNodesInfo(ctx context.Context) error {
 		if strings.Contains(fields[2], "fail") {
 			continue
 		}
-		println(line)
+		fmt.Println(line)
 	}
 	return nil
 }
@@ -542,7 +542,7 @@ func (c *ClusterManager) MigrateSlot(ctx context.Context, slot int, sourceNodeID
 		}
 	}
 
-	_, err = utils.ExecuteClusterCommand(ctx, desCli, "CLUSTER", "SETSLOT", strconv.Itoa(slot), "NODE", sourceNodeID)
+	_, err = utils.ExecuteClusterCommand(ctx, desCli, "CLUSTER", "SETSLOT", strconv.Itoa(slot), "NODE", destNodeID)
 	if err != nil {
 		return fmt.Errorf("failed to set slot %d to NODE %s on destination: %v", slot, destNodeID, err)
 	}
@@ -655,15 +655,14 @@ func (c *ClusterManager) verifyNodeTypeSet(ctx context.Context, masterToSlave ma
 		for i < tryTimes {
 			err := c.UpdateAfterSetNodeRole(ctx, node, clusterName)
 			if err != nil {
-				println("try sync fail", i)
 				i++
+				fmt.Printf("try sync fail %d\n", i)
 				time.Sleep(2 * time.Second)
 				continue
 			}
 			i++
-			ok := c.equalClusterNodeType(masterToSlave, c.MasterToSlave)
-			if ok {
-				break
+			if c.equalClusterNodeType(masterToSlave, c.MasterToSlave) {
+				return true, nil
 			}
 			fmt.Printf("%v try %v /10 sync fail\n", node.Name, i)
 			time.Sleep(3 * time.Second)
@@ -708,7 +707,6 @@ func (c *ClusterManager) waitForMeetSync(client *redis.Client, ctx context.Conte
 				continue
 			}
 			if strings.Contains(fields[2], "fail") {
-				client.ClusterForget(ctx, fields[0])
 				continue
 			}
 			if strings.Contains(line, "connected") {
@@ -744,7 +742,7 @@ func (c *ClusterManager) VerifyAllocateSlots(ctx context.Context, clusterName st
 			for i := 0; i < len(cluster.MasterIDs); i++ {
 				expectedSlots := slotsPerMaster
 				if i == len(cluster.MasterIDs)-1 && remainder != 0 {
-					expectedSlots = remainder
+					expectedSlots = slotsPerMaster + remainder
 				}
 				if cluster.IDToClusterNode[cluster.MasterIDs[i]].SlotsNum != expectedSlots {
 					ok = false
