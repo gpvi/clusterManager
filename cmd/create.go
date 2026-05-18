@@ -2,9 +2,8 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"log"
-	"redisStudy/model"
+	"redisClusterManager/model"
 
 	"github.com/spf13/cobra"
 )
@@ -17,14 +16,8 @@ var createCmd = &cobra.Command{
 	Use:   "create",
 	Short: "create a Redis cluster",
 	Run: func(cmd *cobra.Command, args []string) {
-		var err error
 		ctx := context.Background()
-		ctxPodman, err := model.CreatePodmanConnection(ctx)
-		if err != nil {
-			fmt.Printf("CreatePodmanConnection error: %v", err)
-			return
-		}
-		err = model.CreateClusterAction(ctxPodman, shardCount, nodesPerShard, clusterName)
+		err := model.CreateClusterAction(ctx, shardCount, nodesPerShard, clusterName)
 		if err != nil {
 			log.Printf("CreateClusterAction Error: %v", err)
 		}

@@ -3,7 +3,7 @@ package model
 import (
 	"context"
 	"fmt"
-	"redisStudy/utils"
+	"redisClusterManager/utils"
 )
 
 func ScaleClusterAction(ctx context.Context, additionalShards int, clusterName string) error {
@@ -12,57 +12,57 @@ func ScaleClusterAction(ctx context.Context, additionalShards int, clusterName s
 	if err != nil {
 		return err
 	}
-	// 读取相关配置
+
+	clientset, _, err := NewK8sClientset()
+	if err != nil {
+		return fmt.Errorf("create k8s clientset fail: %v", err)
+	}
+
 	runtimeConfigPath := ClusterRuntimeConfigPath(clusterName)
 	var configFromFile RedisClusterConfig
 	err = utils.ReadFromYAMLFile(runtimeConfigPath, &configFromFile)
 	if err != nil {
-		return fmt.Errorf("error reading from JSON file: %s", err)
+		return fmt.Errorf("error reading from YAML file: %s", err)
 	}
 	nodesPerShard := configFromFile.EffectiveNodesPerShard()
 	RedisContainerPort = configFromFile.Port
 	println("nodesPerShard:")
 	println(nodesPerShard)
-	// 读取配置结束
 
-	//集群数据初始化开始
-	clusterManager := NewClusterManager(nodesPerShard)
-	containersManager := clusterManager.containersManager
+	nodeManager := NewK8sNodeManager(clientset, KubeNamespace)
+	clusterManager := NewClusterManager(nodesPerShard, nodeManager)
 
-	// 容器数据初始化
-	err = containersManager.UpdateAllContainersInfo(ctx)
+	err = nodeManager.ListPodsByCluster(ctx, clusterName)
 	if err != nil {
 		return err
 	}
 
-	if containersManager.Num == 0 {
-		return fmt.Errorf("Current Containers num is 0,please create cluster first. ")
+	if nodeManager.Num == 0 {
+		return fmt.Errorf("Current pods num is 0, please create cluster first.")
 	}
 
-	// 集群数据初始化/
 	ClusterNodeIndex := 0
-	for ; ClusterNodeIndex < clusterManager.containersManager.Num; ClusterNodeIndex++ {
-		if containersManager.Nodes[ClusterNodeIndex].ClusterName == clusterName {
+	for ; ClusterNodeIndex < nodeManager.Num; ClusterNodeIndex++ {
+		if nodeManager.Nodes[ClusterNodeIndex].ClusterName == clusterName {
 			break
 		}
 	}
 	if ClusterNodeIndex == -1 {
 		return fmt.Errorf("cluster with name %s not found", clusterName)
 	}
-	err = clusterManager.UpdateAfterMeet(ctx, containersManager.Nodes[ClusterNodeIndex], clusterName)
+	err = clusterManager.UpdateAfterMeet(ctx, nodeManager.Nodes[ClusterNodeIndex], clusterName)
 	if err != nil {
-		return fmt.Errorf("init meet Info fail when add shaders %v", err)
+		return fmt.Errorf("init meet Info fail when add shards %v", err)
 	}
-	err = clusterManager.UpdateAfterSetNodeRole(ctx, containersManager.Nodes[ClusterNodeIndex], clusterName)
+	err = clusterManager.UpdateAfterSetNodeRole(ctx, nodeManager.Nodes[ClusterNodeIndex], clusterName)
 	if err != nil {
-		return fmt.Errorf("init set node role info  fail when add shader %v", err)
+		return fmt.Errorf("init set node role info fail when add shard %v", err)
 	}
-	err = clusterManager.UpdateSlots(ctx, containersManager.Nodes[ClusterNodeIndex], clusterName)
+	err = clusterManager.UpdateSlots(ctx, nodeManager.Nodes[ClusterNodeIndex], clusterName)
 	if err != nil {
-		return fmt.Errorf("init slots info fail when add shader%v", err)
+		return fmt.Errorf("init slots info fail when add shard%v", err)
 	}
-	// 数据初始化结束
-	// 扩容开始
+
 	err = clusterManager.AddShards(ctx, additionalShards, clusterName)
 	if err != nil {
 		return err

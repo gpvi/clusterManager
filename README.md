@@ -1,70 +1,73 @@
+# 项目介绍
 
+`clusterManager` 是一个基于 Go 和 Podman API 的 Redis Cluster 本地编排工具，当前支持：
 
-## 项目介绍
-此项目在MacOS开发环境下实现了对单个集群的创建、删除以及扩容功能。
-## 文件说明
-- 此项目中环境配置（Redis配置，镜像构建以及项目编译）见文件[INSTALLATION_GUIDE.md](./INSTALLATION_GUIDE.md)
-- 此项目的具体结构设计见文件[DESIGN.md](./DESIGN.md)
-- 为了方便回顾，已补充整理文档到 [docs/00-项目总览.md](./docs/00-项目总览.md)
+- 创建集群
+- 删除集群
+- 扩容集群
 
-## 编译提示
-由于 `github.com/containers/podman/v5` 的依赖链在部分环境下会要求本地安装 `gpgme`，日常构建与测试建议统一使用 `containers_image_openpgp` tag，避免额外安装原生库：
+当前已经实机验证通过的运行形态是：
 
-```shell
+- Windows 客户端
+- Podman machine / WSL 中的远端 Podman service
+- Redis 容器运行在 `podman` bridge 网络中
+
+## 快速开始
+
+推荐优先使用仓库内脚本：
+
+```powershell
+./scripts/build.ps1
+./scripts/test.ps1
+```
+
+其中：
+
+- `scripts/build.ps1`：使用 `containers_image_openpgp` tag 编译 CLI，避免额外安装 `gpgme`
+- `scripts/test.ps1`：运行默认测试集，并自动准备本地 `.gocache` / 最小 `CONTAINERS_CONF`
+- `scripts/build-image.sh`：构建 Redis 测试镜像 `myredis`
+
+如果手动执行命令，推荐使用：
+
+```powershell
 go build -tags containers_image_openpgp -o cluster .
 go test -tags containers_image_openpgp ./...
 ```
 
-## 回顾导航
+## 使用说明
+
+创建集群：
+
+```shell
+./cluster create -s <shardCount> -r <nodesPerShard> -n <clusterName> -p <port>
+```
+
+- `s`: shard 数量，默认 `3`
+- `r`: 每个 shard 中的节点数，包含 1 个 master，默认 `2`
+- `n`: 集群名，默认 `cluster`
+
+删除集群：
+
+```shell
+./cluster delete -n <clusterName>
+```
+
+扩容集群：
+
+```shell
+./cluster scale -n <clusterName> -s <shardCount>
+```
+
+## 文档导航
+
+- 环境配置、镜像构建与运行说明见 [INSTALLATION_GUIDE.md](./INSTALLATION_GUIDE.md)
+- 历史设计草稿见 [DESIGN.md](./DESIGN.md)
+- 完整文档入口见 [docs/README.md](./docs/README.md)
 - [项目总览](./docs/00-项目总览.md)
 - [架构与目录](./docs/01-架构与目录.md)
 - [核心流程](./docs/02-核心流程.md)
 - [配置与运行](./docs/03-配置与运行.md)
 - [当前状态与问题清单](./docs/04-当前状态与问题清单.md)
-
-## 使用说明 
-### 创建集群
-```shell
-./cluster create -s <shardCount> -r <nodesPerShard> -n <clusterName> -p <port>
-```
-参数解释：
-- s: shardCount, 集群中 shard 的数量，默认为 3
-- r: nodesPerShard, 每个 shard 中 Redis 节点总数，包含 1 个 master，默认为 2
-- n: clusterName, 集群的名称，默认为cluster
-
-**Example** :
-~~~
-./cluster create -s 3 -r 2 -n test -p
-~~~
-正确运行结果：
-![./img/img_2.png](img/img_2.png)
-
-### 删除集群
-```shell
-./cluster delete -n <clusterName>
-```
-参数解释：
-- n: clusterName, 集群的名称，必须显式声明
-
-**Example**
-~~~
-./cluster delete -n <clusterName>
-~~~
-正确运行结果：
-![img/imgDel.png](img/imgDel.png)
-
-### 扩容集群
-
-```shell
-./cluster scale -n <clusterName> -s <shardCount> 
-```
-参数解释：
-- n: clusterName, 集群的名称，必须显式声明
-- s: shardCount, 增加的 shard 数量，默认为 1
-
-**Example:**
-~~~
-./cluster scale -n test -s 3 
-~~~
-正确运行结果：
-![img/omgScale.png](img/imgScale.png)
+- [CLI 使用手册](./docs/05-CLI使用手册.md)
+- [开发与测试指南](./docs/06-开发与测试指南.md)
+- [故障排查](./docs/07-故障排查.md)

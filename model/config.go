@@ -1,13 +1,11 @@
 package model
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
-	"redisStudy/utils"
+	"redisClusterManager/utils"
 	"runtime"
 	"strconv"
 )
@@ -16,11 +14,6 @@ const TotalSlots int = 16384
 
 var True = true
 
-var runPodmanConnectionList = func() ([]byte, error) {
-	return exec.Command("podman", "system", "connection", "list", "--format", "json").Output()
-}
-
-// 全局变量，用于存储配置数据
 var (
 	ProjectRoot         string
 	RedisHostConfigPath string
@@ -30,15 +23,13 @@ var (
 	RuntimeStateDir     string
 	ContainerInfoFile   string
 	ConfigSaveFileName  string
-	PodmanEndpoint      string
-	PodmanIdentity      string
-	PodmanMachine       bool
-	PodmanNetworkName   string
+	KubeConfigPath      string
+	KubeNamespace       string
+	BaseNodePort        int
 	imageName           string
 	RedisContainerPort  uint16 = 6379
 )
 
-// Config 结构体用于映射 YAML 配置文件
 type Config struct {
 	Paths struct {
 		RedisHostConfigPath string `yaml:"redis_host_config_path"`
@@ -47,10 +38,11 @@ type Config struct {
 		RedisConfigDataPath string `yaml:"redis_config_data_path"`
 		RuntimeStateDir     string `yaml:"runtime_state_dir"`
 	} `yaml:"paths"`
-	Podman struct {
-		Endpoint    string `yaml:"endpoint"`
-		NetworkName string `yaml:"network_name"`
-	} `yaml:"podman"`
+	Kubernetes struct {
+		KubeConfigPath string `yaml:"kube_config_path"`
+		Namespace      string `yaml:"namespace"`
+		BaseNodePort   int    `yaml:"base_node_port"`
+	} `yaml:"kubernetes"`
 	Configs struct {
 		SaveFileName      string `yaml:"save_file_name"`
 		ContainerInfoFile string `yaml:"container_info_file_name"`
@@ -59,27 +51,20 @@ type Config struct {
 	} `yaml:"configs"`
 }
 
-// ReadConfig 读取 YAML 配置文件并填充配置项
 func (c *Config) ReadConfig() error {
-	// 获取项目根目录路径
 	_, filename, _, _ := runtime.Caller(0)
 	root := path.Dir(path.Dir(filename))
 	ProjectRoot = root
 	filePath := filepath.Join(root, "config", "conf.yaml")
 
-	// 调用工具函数读取 YAML 文件
 	err := utils.ReadFromYAMLFile(filePath, c)
 	if err != nil {
 		return fmt.Errorf("failed to read YAML file: %w", err)
 	}
 
-	// 1. 优先从环境变量读取覆盖
 	c.loadFromEnv()
-
-	// 2. 处理相对路径，将其转换为绝对路径
 	c.resolvePaths(root)
 
-	// 验证并设置全局变量
 	if c.Paths.RedisHostConfigPath == "" {
 		return fmt.Errorf("redis host config path is empty")
 	}
@@ -126,20 +111,24 @@ func (c *Config) ReadConfig() error {
 		RedisContainerPort = c.Configs.RedisPort
 	}
 
-	PodmanEndpoint = c.Podman.Endpoint
-	if PodmanEndpoint == "" {
-		PodmanEndpoint = defaultPodmanEndpoint()
+	KubeConfigPath = c.Kubernetes.KubeConfigPath
+	if KubeConfigPath == "" {
+		KubeConfigPath = defaultKubeConfig()
 	}
 
-	PodmanNetworkName = c.Podman.NetworkName
-	if PodmanNetworkName == "" {
-		PodmanNetworkName = "podman"
+	KubeNamespace = c.Kubernetes.Namespace
+	if KubeNamespace == "" {
+		KubeNamespace = "default"
+	}
+
+	BaseNodePort = c.Kubernetes.BaseNodePort
+	if BaseNodePort == 0 {
+		BaseNodePort = 30000
 	}
 
 	return nil
 }
 
-// loadFromEnv 从环境变量读取配置并覆盖当前配置
 func (c *Config) loadFromEnv() {
 	if v := os.Getenv("REDIS_HOST_CONFIG_PATH"); v != "" {
 		c.Paths.RedisHostConfigPath = v
@@ -165,13 +154,16 @@ func (c *Config) loadFromEnv() {
 	if v := os.Getenv("CLUSTER_STATE_DIR"); v != "" {
 		c.Paths.RuntimeStateDir = v
 	}
-	if v := os.Getenv("PODMAN_ENDPOINT"); v != "" {
-		c.Podman.Endpoint = v
-	} else if v := os.Getenv("CONTAINER_HOST"); v != "" {
-		c.Podman.Endpoint = v
+	if v := os.Getenv("KUBECONFIG"); v != "" {
+		c.Kubernetes.KubeConfigPath = v
 	}
-	if v := os.Getenv("PODMAN_NETWORK_NAME"); v != "" {
-		c.Podman.NetworkName = v
+	if v := os.Getenv("KUBE_NAMESPACE"); v != "" {
+		c.Kubernetes.Namespace = v
+	}
+	if v := os.Getenv("BASE_NODE_PORT"); v != "" {
+		if port, err := strconv.Atoi(v); err == nil {
+			c.Kubernetes.BaseNodePort = port
+		}
 	}
 	if v := os.Getenv("CLUSTER_REDIS_PORT"); v != "" {
 		if port, err := strconv.ParseUint(v, 10, 16); err == nil {
@@ -180,14 +172,12 @@ func (c *Config) loadFromEnv() {
 	}
 }
 
-// resolvePaths 将所有相对路径转换为基于项目根目录的绝对路径
 func (c *Config) resolvePaths(root string) {
 	c.Paths.RedisHostConfigPath = resolveContainerHostPath(root, c.Paths.RedisHostConfigPath)
 	c.Paths.RedisHostDataPath = resolveContainerHostPath(root, c.Paths.RedisHostDataPath)
 	c.Paths.RuntimeStateDir = resolveLocalAbsPath(root, c.Paths.RuntimeStateDir)
 }
 
-// resolveContainerHostPath 允许保留 Linux 风格绝对路径，便于 Windows 客户端连接 Linux Podman machine。
 func resolveContainerHostPath(root, p string) string {
 	if isUnixStyleAbsPath(p) {
 		return p
@@ -195,7 +185,6 @@ func resolveContainerHostPath(root, p string) string {
 	return resolveLocalAbsPath(root, p)
 }
 
-// resolveLocalAbsPath 如果是本地相对路径，则返回相对于 root 的绝对路径。
 func resolveLocalAbsPath(root, p string) string {
 	if filepath.IsAbs(p) || p == "" {
 		return p
@@ -214,6 +203,17 @@ func resolveStateFilePath(root, name string) string {
 	return filepath.Join(root, name)
 }
 
+func defaultKubeConfig() string {
+	if v := os.Getenv("KUBECONFIG"); v != "" {
+		return v
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".kube", "config")
+}
+
 func ClusterStateDir(clusterName string) string {
 	return filepath.Join(RuntimeStateDir, clusterName)
 }
@@ -226,84 +226,10 @@ func ClusterContainerInfoPath(clusterName string) string {
 	return resolveStateFilePath(ClusterStateDir(clusterName), ContainerInfoFile)
 }
 
-func defaultPodmanEndpoint() string {
-	if v := os.Getenv("CONTAINER_HOST"); v != "" {
-		return v
-	}
-	if endpoint, err := defaultPodmanEndpointFromConnectionList(); err == nil && endpoint != "" {
-		return endpoint
-	}
-
-	switch runtime.GOOS {
-	case "windows":
-		return "npipe://\\\\.\\pipe\\podman-machine-default"
-	case "darwin":
-		home, err := os.UserHomeDir()
-		if err == nil && home != "" {
-			return "unix://" + filepath.ToSlash(filepath.Join(home, ".local", "share", "containers", "podman", "machine", "podman.sock"))
-		}
-	case "linux":
-		if xdgRuntimeDir := os.Getenv("XDG_RUNTIME_DIR"); xdgRuntimeDir != "" {
-			return "unix://" + filepath.ToSlash(filepath.Join(xdgRuntimeDir, "podman", "podman.sock"))
-		}
-		home, err := os.UserHomeDir()
-		if err == nil && home != "" {
-			return "unix://" + filepath.ToSlash(filepath.Join(home, ".local", "share", "containers", "podman", "podman.sock"))
-		}
-	}
-
-	return ""
-}
-
-type podmanConnectionInfo struct {
-	Name      string `json:"Name"`
-	URI       string `json:"URI"`
-	Identity  string `json:"Identity"`
-	IsMachine bool   `json:"IsMachine"`
-	Default   bool   `json:"Default"`
-}
-
-func defaultPodmanEndpointFromConnectionList() (string, error) {
-	data, err := runPodmanConnectionList()
-	if err != nil {
-		return "", err
-	}
-	connection, err := parseDefaultPodmanConnection(data)
-	if err != nil {
-		return "", err
-	}
-	return connection.URI, nil
-}
-
-func parseDefaultPodmanConnectionURI(data []byte) (string, error) {
-	connection, err := parseDefaultPodmanConnection(data)
-	if err != nil {
-		return "", err
-	}
-	return connection.URI, nil
-}
-
-func parseDefaultPodmanConnection(data []byte) (podmanConnectionInfo, error) {
-	var connections []podmanConnectionInfo
-	if err := json.Unmarshal(data, &connections); err != nil {
-		return podmanConnectionInfo{}, err
-	}
-	for _, connection := range connections {
-		if connection.Default && connection.URI != "" {
-			PodmanIdentity = connection.Identity
-			PodmanMachine = connection.IsMachine
-			return connection, nil
-		}
-	}
-	return podmanConnectionInfo{}, nil
-}
-
-// NewConfig 创建一个新的配置对象
 func NewConfig() *Config {
 	return &Config{}
 }
 
-// PrintConfig 打印当前配置
 func (c *Config) PrintConfig() {
 	fmt.Printf("ProjectRoot: %s\n", ProjectRoot)
 	fmt.Printf("RedisHostConfigPath: %s\n", RedisHostConfigPath)
@@ -313,13 +239,13 @@ func (c *Config) PrintConfig() {
 	fmt.Printf("RuntimeStateDir: %s\n", RuntimeStateDir)
 	fmt.Printf("ConfigSaveFileName: %s\n", ConfigSaveFileName)
 	fmt.Printf("ContainerInfoFile: %s\n", ContainerInfoFile)
-	fmt.Printf("PodmanEndpoint: %s\n", PodmanEndpoint)
-	fmt.Printf("PodmanNetworkName: %s\n", PodmanNetworkName)
+	fmt.Printf("KubeConfigPath: %s\n", KubeConfigPath)
+	fmt.Printf("KubeNamespace: %s\n", KubeNamespace)
+	fmt.Printf("BaseNodePort: %d\n", BaseNodePort)
 	fmt.Printf("RedisContainerPort: %d\n", RedisContainerPort)
 	fmt.Printf("ImageName: %s\n", imageName)
 }
 
-// InitConfig 初始化配置，读取 YAML 文件并设置全局变量
 func InitConfig() error {
 	config := NewConfig()
 	err := config.ReadConfig()

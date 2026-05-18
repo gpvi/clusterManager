@@ -5,12 +5,13 @@ paths:
   redis_config_data_path: "/data/redis/data"
   runtime_state_dir: "runtime"
 
-podman:
-  endpoint: ""
-  network_name: "podman"
+kubernetes:
+  kube_config_path: ""
+  namespace: "default"
+  base_node_port: 30000
 
 configs:
   save_file_name: "run_time_config.yaml"
   container_info_file_name: "containers.json"
-  image_name: "myredis"
+  image_name: "redis:7-alpine"
   redis_port: 6379

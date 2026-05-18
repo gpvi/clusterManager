@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/spf13/cobra"
-	"redisStudy/model"
+	"redisClusterManager/model"
 )
 
 var additionalShards int
@@ -17,16 +17,9 @@ var scaleCmd = &cobra.Command{
 			return fmt.Errorf("please input clustername first")
 		}
 		ctx := context.Background()
-		ctx, err := model.CreatePodmanConnection(ctx)
+		err := model.ScaleClusterAction(ctx, additionalShards, clusterName)
 		if err != nil {
-			e := fmt.Errorf("%v", err)
-			println(e)
-
-		}
-		err = model.ScaleClusterAction(ctx, additionalShards, clusterName)
-		if err != nil {
-			e := fmt.Errorf("ScaleCluster() error = %v", err)
-			println(e)
+			fmt.Printf("ScaleCluster() error = %v\n", err)
 		}
 		return nil
 	},

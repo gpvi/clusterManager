@@ -2,7 +2,7 @@ package main
 
 import (
 	"log"
-	"redisStudy/cmd"
+	"redisClusterManager/cmd"
 )
 
 func main() {

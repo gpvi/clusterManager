@@ -2,3 +2,8 @@
 .gocache/
 cluster
 cluster-linux
+.DS_Store
+.testcontainers/
+.testhome/
+.xdg/
+runtime/

@@ -1,132 +1,121 @@
+# 环境配置
 
-## 环境配置
-### 1. 下载podman
-- 安装 Homebrew（如果尚未安装）：
+## 1. 安装并启动 Podman
 
-参考博客：https://www.cnblogs.com/liyihua/p/12753163.html
-- 安装 Podman：
-  使用 Homebrew 安装 Podman：
-~~~
-brew install podman
-~~~
-- 安装 Podman Desktop（可选）：
-  Podman Desktop 是一个图形界面的管理工具，可以使 Podman 的使用更加方便。要安装它，请运行：
-~~~
-brew install --cask podman-desktop
-~~~
+推荐先确认本机 Podman CLI 和 Podman machine 正常：
 
-- 启动 Podman：
-  安装完成后，启动 Podman。运行：
-~~~
+```powershell
 podman --version
-~~~
-显示 Podman 的版本，确认成功安装。
-- 初始化并启动Podman
-~~~
 podman machine init
 podman machine start
-~~~
-
-### 2. 下载Redis并修改配置确保redis cluster 可以正常启动
-#### Step1  下载redis
-~~~
-brew install redis
-~~~
-#### step2 启动redis
-```shell
-redis-server
+podman system connection list
 ```
-结果如下：
-![img.png](img/RedisServerCheck.png)
-#### Step3 测试Redis 是否安装成功
+
+当前项目已验证通过的模式是：
+
+- Windows 上运行 CLI 和 Go 程序
+- Podman machine / WSL 中运行远端 Podman service
+- 通过 `ssh://.../podman.sock` 连接远端服务
+
+## 2. 准备 Redis 配置
+
+项目默认使用：
+
+- [setup/redis/config/redis.conf](./setup/redis/config/redis.conf)
+- `setup/redis/data/`
+
+如果要替换为你自己的 Redis 配置，至少要保留 cluster 相关配置。
+
+## 3. 构建 Redis 镜像
+
+推荐直接运行：
+
+```bash
+./scripts/build-image.sh
 ```
-redis-cli -p <port> -h <ip>
+
+该脚本会执行：
+
+```bash
+podman build -t myredis -f ./setup/redisv3.dockerfile .
 ```
-检测连接：
-![img.png](img/redisCliCheck.png)
-#### Step4 配置redis.conf
-redis.conf 文件在当前目录下可以找到，./prepareFiles/redis/config/redis.conf
-若需要重新下载：
-下载版本为7.2的配置文件
-[redis配置下载](https://redis.io/docs/latest/operate/oss_and_stack/management/config/)
-![img.png](img/DownloadConfig.png)
-修改配置文件，添加如下内容
-~~~
-cluster_enabled=yes，cluster_config_file=nodes.conf，cluster_node_timeout=5000，cluster_require_full_coverage=yes，cluster_replica_validity_factor=10，cluster_migration_barrier=1，cluster_slave_no_failover=yes，cluster_slave_validity_factor=10，cluster_slave_no_failover=yes，cluster_slave_no_failover=yes，cluster_slave_no_failover=yes，cluster_slave_no_failover=yes，
-~~~
 
-### 3. 编写dockerfile 使用Podman build 构建镜像
+## 4. 修改配置文件
 
+主配置文件位置：`config/conf.yaml`
 
-方法一：直接运行根目录下的build_image.sh
+当前关键项：
 
-方法二：自定义镜像
-```Dockerfile
-# # 使用 redis:alpine 作为基础镜像
-# FROM redis:alpine
+- `paths.redis_host_config_path`
+- `paths.redis_host_data_path`
+- `paths.runtime_state_dir`
+- `podman.endpoint`
+- `podman.network_name`
+- `configs.image_name`
+- `configs.redis_port`
 
-# # 更新 apk 包索引并安装 bash
-# RUN apk update && apk add --no-cache bash && mkdir -p /usr/local/var/db/redis/
-# # 复制 Redis 配置文件到容器中（可选，根据需要）
-# COPY redis.conf /usr/local/etc/redis/redis.conf
+### Windows + Podman machine 说明
 
-# # 设置容器启动时的默认命令
-# CMD ["redis-server"]
+如果 Go 程序运行在 Windows，但 Podman service 运行在 Linux VM 中，容器 bind mount 的宿主机路径必须是 **Podman machine 内可见的 Linux 路径**。
 
-# 使用 Ubuntu 作为基础镜像
-FROM ubuntu:latest
+例如：
 
-# 更新包索引并安装 Redis
-RUN apt-get update && \
-    apt-get install -y redis-server netcat-openbsd  && \
-    mkdir -p /usr/local/var/db/redis/ && \
-    mkdir -p /usr/local/var/db/redis-cluster/
-    
+```powershell
+$env:REDIS_HOST_CONFIG_PATH="/mnt/e/Projects/clusterManager/clusterManager-main/setup/redis/config"
+$env:REDIS_HOST_DATA_PATH="/mnt/e/Projects/clusterManager/clusterManager-main/setup/redis/data"
 ```
-之后运行podman build命令
+
+项目当前已经支持这类路径，不会再把 `/mnt/...` 误解析成 Windows 相对路径。
+
+## 5. 构建项目
+
+推荐使用脚本：
+
+```powershell
+./scripts/build.ps1
 ```
-podman build -t <imagename> -f <dockerfilepath>
-```
-正确运行结果：
-![img.png](img/podmanBuild.png)
 
-### 4. 修改配置文件（可选）
-#### 配置文件说明：
+等价命令：
 
-项目配置文件位置：`config/conf.yaml`
-
-- **redis_host_config_path**: 宿主机 Redis 配置文件存放目录。支持相对路径（相对于项目根目录），默认值 `"setup/redis/config"`。
-- **redis_host_data_path**: 宿主机 Redis 数据存放目录。支持相对路径，默认值 `"setup/redis/data"`。
-- **redis_config_path**: 容器内 Redis 配置文件存放路径，默认为 `"/data/redis/config"`。
-- **redis_config_data_path**: 容器内 Redis 数据存放路径，默认为 `"/data/redis/data"`。
-- **configs_save_file_name**: 集群创建后存储运行时配置的文件名。
-- **image_name**: 使用 Podman 构建的镜像名称，默认为 `"myredis"`。
-
-**优化提示**：
-项目现在支持**自动路径解析**和**环境变量覆盖**。你无需手动修改绝对路径，直接保持默认的相对路径即可运行。如果需要临时覆盖配置，可以使用环境变量，例如：
-`$env:CLUSTER_IMAGE_NAME="your-custom-image"` (PowerShell) 或 `export CLUSTER_IMAGE_NAME="your-custom-image"` (Bash)。
-
-
-### 5. 使用 go mod install 下载所需的包
-```shell
-# 进入当前项目目录
-cd reidsManager
-# 安装依赖包
-go mod type 
-go mod download
-go get -u ./...
-```
-### 5. 编译项目
-```
+```powershell
 go build -tags containers_image_openpgp -o cluster .
 ```
-编译完成后在根目录会出现如下文件：
 
-![./img/img.png](img/img.png)
+这里使用 `containers_image_openpgp` 是为了避免为 Podman 依赖链额外安装 `gpgme`。
 
-### 6. 测试项目
-为避免本地额外安装 `gpgme`，建议测试时同样带上 `containers_image_openpgp` tag：
+## 6. 运行测试
 
-```shell
+默认测试：
+
+```powershell
+./scripts/test.ps1
+```
+
+该脚本会自动准备：
+
+- 仓库内 `.gocache`
+- 用于 Windows 本地测试的最小 `CONTAINERS_CONF`
+
+等价命令：
+
+```powershell
 go test -tags containers_image_openpgp ./...
 ```
+
+真实 Podman 集成测试需要额外开启：
+
+```powershell
+$env:CLUSTER_RUN_INTEGRATION_TESTS="1"
+go test -tags "integration containers_image_openpgp" ./model -run TestCreation -v
+```
+
+## 7. 运行时文件
+
+运行时状态现在按集群名保存到 `runtime/<clusterName>/` 下，主要包括：
+
+- `containers.json`
+- `run_time_config.yaml`
+
+这些文件属于运行态产物，不建议提交到 Git。
+
+更多命令示例见 [docs/05-CLI使用手册.md](./docs/05-CLI使用手册.md)，常见问题见 [docs/07-故障排查.md](./docs/07-故障排查.md)。
