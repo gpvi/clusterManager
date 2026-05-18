@@ -126,10 +126,6 @@ func (c *ClusterManager) Bootstrap(ctx context.Context, shardCount int, clusterN
 	return nil
 }
 
-func (c *ClusterManager) GetContainerNum() int {
-	return c.nodeManager.Num
-}
-
 func (c *ClusterManager) AddShards(ctx context.Context, shardCount int, clusterName string) error {
 	var err error
 	sum := shardCount * c.NodesPerShard
@@ -298,6 +294,8 @@ func (c *ClusterManager) UpdateSlots(ctx context.Context, LoginNode *RuntimeNode
 	if c.nodeManager.Num == 0 {
 		return nil
 	}
+
+	c.EmptyMasters = make([]*ClusterNode, 0)
 
 	nodes, err := c.GetClusterNodes(ctx, LoginNode, clusterName)
 	if err != nil {
@@ -922,7 +920,8 @@ func parseClusterNodeLines(lines []string, clusterFilter func(ip string) bool) (
 		if node.NodeType == Master && len(fields) > 8 {
 			slots, err := ParseSlots(fields[8:])
 			if err != nil {
-				return nil, nil
+				log.Printf("failed to parse slots for node %s: %v", node.ID, err)
+			continue
 			}
 			node.Slots = slots
 		}

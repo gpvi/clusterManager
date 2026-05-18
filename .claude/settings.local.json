@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git commit -m ' *)",
+      "Bash(sed -i '501,510s/^.*$//' \"e:/Projects/clusterManager/controller/rediscluster_controller.go\")",
+      "Bash(sed -i '/^$/{ N; /^\\\\n$/d; }' \"e:/Projects/clusterManager/controller/rediscluster_controller.go\")"
+    ]
+  }
+}

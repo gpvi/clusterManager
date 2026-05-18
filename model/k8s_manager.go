@@ -367,7 +367,7 @@ func (c *K8sNodeManager) ListPodsByCluster(ctx context.Context, clusterName stri
 			return fmt.Errorf("failed to list services for pod %s: %w", pod.Name, err)
 		}
 
-		if len(svcList.Items) == 0 || svcList.Items[0].Spec.Ports[0].NodePort == 0 {
+		if len(svcList.Items) == 0 || len(svcList.Items[0].Spec.Ports) == 0 || svcList.Items[0].Spec.Ports[0].NodePort == 0 {
 			continue
 		}
 		hostPort := uint16(svcList.Items[0].Spec.Ports[0].NodePort)

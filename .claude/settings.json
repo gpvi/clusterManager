@@ -12,7 +12,33 @@
       "Bash(python3 fixes.py)",
       "Bash(python fixes.py)",
       "Bash(python fixes_r4.py)",
-      "Bash(python fixes_r5.py)"
+      "Bash(python fixes_r5.py)",
+      "Bash(protoc --version)",
+      "Bash(go install *)",
+      "Bash(winget install *)",
+      "Bash(where protoc *)",
+      "Bash(/c/Users/niuzq/AppData/Local/Microsoft/WinGet/Packages/Google.Protobuf_Microsoft.Winget.Source_8wekyb3d8bbwe/bin/protoc.exe --go_out=. --go-grpc_out=. proto/rediscluster.proto)",
+      "Bash(cp \"/c/Users/niuzq/AppData/Local/Microsoft/WinGet/Packages/Google.Protobuf_Microsoft.Winget.Source_8wekyb3d8bbwe/bin/protoc.exe\" /d/tools/protoc.exe && echo \"protoc moved to d:/tools\")",
+      "Bash(python -m pip --version)",
+      "Bash(python -c \"import grpc_tools; print\\('grpc_tools available'\\)\")",
+      "Bash(python -c \"import grpc_tools.protoc; print\\('grpc_tools.protoc available'\\)\")",
+      "Bash(go get *)",
+      "Bash(pip install *)",
+      "Bash(python -m pip install grpcio-tools)",
+      "Bash(python -m grpc_tools.protoc --proto_path=. --python_out=agent/src/stub --grpc_python_out=agent/src/stub proto/rediscluster.proto)",
+      "Bash(cd e:/Projects/clusterManager && find agent/src/stub -name \"*.py\" -type f && echo \"---\" && mv agent/src/stub/proto/* agent/src/stub/ && rm -rf agent/src/stub/proto && ls agent/src/stub/)",
+      "Bash(awk '/\\\\/\\\\/ 4. Evaluate health\\\\./,/cr.Status.MasterCount = masterCount/' controller/rediscluster_controller.go)",
+      "Bash(awk '/^[[:space:]]*allHealthy := true/,/cr.Status.MasterCount = masterCount/' controller/rediscluster_controller.go)",
+      "Bash(awk '/ParseRedisClusterNodes failed/,/cr.Status.MasterCount = masterCount/' controller/rediscluster_controller.go)",
+      "Bash(awk '!/fail/')",
+      "Bash(python3)",
+      "Bash(python)",
+      "Bash(sed -i '944,946d; 948d' model/cluster_manager.go)",
+      "Bash(sed -n '938,948p' model/cluster_manager.go)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\niuzq\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Google.Protobuf_Microsoft.Winget.Source_8wekyb3d8bbwe\\bin",
+      "E:\\Projects\\clusterManager\\agent\\src\\stub\\proto"
     ]
   }
 }

@@ -185,7 +185,7 @@ func buildNodeStatus(clusterNodes []model.ClusterNode) []v1.NodeStatus {
 // health status, master count, and the computed node status slice.
 func assessHealth(nodes []model.ClusterNode) (healthy bool, masterCount int, statusNodes []v1.NodeStatus) {
 	statusNodes = buildNodeStatus(nodes)
-	allHealthy, masterCount, statusNodes := assessHealth(nodes)
+	allHealthy := true
 	mc := 0
 	for _, ns := range statusNodes {
 		if ns.Role == model.Master {
@@ -529,13 +529,4 @@ func (c *RedisClusterController) handleDegraded(ctx context.Context, cr *v1.Redi
 	return c.updateStatus(ctx, cr)
 }
 
-// containsFailFlag returns true if the AdditionalFlags slice includes any
-// failure-related flag (e.g., "fail", "fail?").
-func containsFailFlag(flags []string) bool {
-	for _, f := range flags {
-		if f == "fail" || f == "fail?" {
-			return true
-		}
-	}
-	return false
-}
+
