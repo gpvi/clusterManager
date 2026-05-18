@@ -10,8 +10,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-func NewK8sClientset() (kubernetes.Interface, *rest.Config, error) {
-	kubeConfigPath := KubeConfigPath
+func NewK8sClientset(kubeConfigPath string) (kubernetes.Interface, *rest.Config, error) {
 	if kubeConfigPath == "" {
 		if v := os.Getenv("KUBECONFIG"); v != "" {
 			kubeConfigPath = v

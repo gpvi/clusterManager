@@ -12,9 +12,7 @@ import (
 
 const TotalSlots int = 16384
 
-var True = true
-
-var (
+type RuntimeConfig struct {
 	ProjectRoot         string
 	RedisHostConfigPath string
 	RedisConfigPath     string
@@ -26,9 +24,9 @@ var (
 	KubeConfigPath      string
 	KubeNamespace       string
 	BaseNodePort        int
-	imageName           string
-	RedisContainerPort  uint16 = 6379
-)
+	ImageName           string
+	RedisContainerPort  uint16
+}
 
 type Config struct {
 	Paths struct {
@@ -51,82 +49,83 @@ type Config struct {
 	} `yaml:"configs"`
 }
 
-func (c *Config) ReadConfig() error {
+func (c *Config) ReadConfig() (*RuntimeConfig, error) {
 	_, filename, _, _ := runtime.Caller(0)
 	root := path.Dir(path.Dir(filename))
-	ProjectRoot = root
+	cfg := &RuntimeConfig{ProjectRoot: root}
 	filePath := filepath.Join(root, "config", "conf.yaml")
 
 	err := utils.ReadFromYAMLFile(filePath, c)
 	if err != nil {
-		return fmt.Errorf("failed to read YAML file: %w", err)
+		return nil, fmt.Errorf("failed to read YAML file: %w", err)
 	}
 
 	c.loadFromEnv()
 	c.resolvePaths(root)
 
 	if c.Paths.RedisHostConfigPath == "" {
-		return fmt.Errorf("redis host config path is empty")
+		return nil, fmt.Errorf("redis host config path is empty")
 	}
-	RedisHostConfigPath = c.Paths.RedisHostConfigPath
+	cfg.RedisHostConfigPath = c.Paths.RedisHostConfigPath
 
 	if c.Paths.RedisHostDataPath == "" {
-		return fmt.Errorf("redis host data path is empty")
+		return nil, fmt.Errorf("redis host data path is empty")
 	}
-	RedisHostDataPath = c.Paths.RedisHostDataPath
+	cfg.RedisHostDataPath = c.Paths.RedisHostDataPath
 
-	RedisConfigPath = c.Paths.RedisConfigPath
-	if RedisConfigPath == "" {
-		RedisConfigPath = "/data/redis/config"
-	}
-
-	RedisConfigDataPath = c.Paths.RedisConfigDataPath
-	if RedisConfigDataPath == "" {
-		RedisConfigDataPath = "/data/redis/data"
+	cfg.RedisConfigPath = c.Paths.RedisConfigPath
+	if cfg.RedisConfigPath == "" {
+		cfg.RedisConfigPath = "/data/redis/config"
 	}
 
-	RuntimeStateDir = c.Paths.RuntimeStateDir
-	if RuntimeStateDir == "" {
-		RuntimeStateDir = filepath.Join(root, "runtime")
+	cfg.RedisConfigDataPath = c.Paths.RedisConfigDataPath
+	if cfg.RedisConfigDataPath == "" {
+		cfg.RedisConfigDataPath = "/data/redis/data"
+	}
+
+	cfg.RuntimeStateDir = c.Paths.RuntimeStateDir
+	if cfg.RuntimeStateDir == "" {
+		cfg.RuntimeStateDir = filepath.Join(root, "runtime")
 	}
 
 	configFileName := c.Configs.SaveFileName
 	if configFileName == "" {
 		configFileName = "run_time_config.yaml"
 	}
-	ConfigSaveFileName = resolveStateFilePath(RuntimeStateDir, configFileName)
+	cfg.ConfigSaveFileName = resolveStateFilePath(cfg.RuntimeStateDir, configFileName)
 
 	containerInfoFile := c.Configs.ContainerInfoFile
 	if containerInfoFile == "" {
 		containerInfoFile = "containers.json"
 	}
-	ContainerInfoFile = containerInfoFile
+	cfg.ContainerInfoFile = containerInfoFile
 
-	imageName = c.Configs.ImageName
-	if imageName == "" {
-		return fmt.Errorf("image name is empty")
+	cfg.ImageName = c.Configs.ImageName
+	if cfg.ImageName == "" {
+		return nil, fmt.Errorf("image name is empty")
 	}
 
-	if c.Configs.RedisPort != 0 && RedisContainerPort == 6379 {
-		RedisContainerPort = c.Configs.RedisPort
+	cfg.RedisContainerPort = 6379
+	if c.Configs.RedisPort != 0 {
+		cfg.RedisContainerPort = c.Configs.RedisPort
 	}
 
-	KubeConfigPath = c.Kubernetes.KubeConfigPath
-	if KubeConfigPath == "" {
-		KubeConfigPath = defaultKubeConfig()
+	cfg.KubeConfigPath = c.Kubernetes.KubeConfigPath
+	if cfg.KubeConfigPath == "" {
+		cfg.KubeConfigPath = defaultKubeConfig()
 	}
 
-	KubeNamespace = c.Kubernetes.Namespace
-	if KubeNamespace == "" {
-		KubeNamespace = "default"
+	cfg.KubeNamespace = c.Kubernetes.Namespace
+	if cfg.KubeNamespace == "" {
+		cfg.KubeNamespace = "default"
 	}
 
-	BaseNodePort = c.Kubernetes.BaseNodePort
-	if BaseNodePort == 0 {
-		BaseNodePort = 30000
+	cfg.BaseNodePort = c.Kubernetes.BaseNodePort
+	if cfg.BaseNodePort == 0 {
+		cfg.BaseNodePort = 30000
 	}
 
-	return nil
+	return cfg, nil
 }
 
 func (c *Config) loadFromEnv() {
@@ -178,6 +177,34 @@ func (c *Config) resolvePaths(root string) {
 	c.Paths.RuntimeStateDir = resolveLocalAbsPath(root, c.Paths.RuntimeStateDir)
 }
 
+func (cfg *RuntimeConfig) ClusterStateDir(clusterName string) string {
+	return filepath.Join(cfg.RuntimeStateDir, clusterName)
+}
+
+func (cfg *RuntimeConfig) ClusterRuntimeConfigPath(clusterName string) string {
+	return resolveStateFilePath(cfg.ClusterStateDir(clusterName), cfg.ConfigSaveFileName)
+}
+
+func (cfg *RuntimeConfig) ClusterContainerInfoPath(clusterName string) string {
+	return resolveStateFilePath(cfg.ClusterStateDir(clusterName), cfg.ContainerInfoFile)
+}
+
+func (cfg *RuntimeConfig) PrintConfig() {
+	fmt.Printf("ProjectRoot: %s\n", cfg.ProjectRoot)
+	fmt.Printf("RedisHostConfigPath: %s\n", cfg.RedisHostConfigPath)
+	fmt.Printf("RedisConfigPath: %s\n", cfg.RedisConfigPath)
+	fmt.Printf("RedisHostDataPath: %s\n", cfg.RedisHostDataPath)
+	fmt.Printf("RedisConfigDataPath: %s\n", cfg.RedisConfigDataPath)
+	fmt.Printf("RuntimeStateDir: %s\n", cfg.RuntimeStateDir)
+	fmt.Printf("ConfigSaveFileName: %s\n", cfg.ConfigSaveFileName)
+	fmt.Printf("ContainerInfoFile: %s\n", cfg.ContainerInfoFile)
+	fmt.Printf("KubeConfigPath: %s\n", cfg.KubeConfigPath)
+	fmt.Printf("KubeNamespace: %s\n", cfg.KubeNamespace)
+	fmt.Printf("BaseNodePort: %d\n", cfg.BaseNodePort)
+	fmt.Printf("RedisContainerPort: %d\n", cfg.RedisContainerPort)
+	fmt.Printf("ImageName: %s\n", cfg.ImageName)
+}
+
 func resolveContainerHostPath(root, p string) string {
 	if isUnixStyleAbsPath(p) {
 		return p
@@ -214,44 +241,16 @@ func defaultKubeConfig() string {
 	return filepath.Join(home, ".kube", "config")
 }
 
-func ClusterStateDir(clusterName string) string {
-	return filepath.Join(RuntimeStateDir, clusterName)
-}
-
-func ClusterRuntimeConfigPath(clusterName string) string {
-	return resolveStateFilePath(ClusterStateDir(clusterName), ConfigSaveFileName)
-}
-
-func ClusterContainerInfoPath(clusterName string) string {
-	return resolveStateFilePath(ClusterStateDir(clusterName), ContainerInfoFile)
-}
-
 func NewConfig() *Config {
 	return &Config{}
 }
 
-func (c *Config) PrintConfig() {
-	fmt.Printf("ProjectRoot: %s\n", ProjectRoot)
-	fmt.Printf("RedisHostConfigPath: %s\n", RedisHostConfigPath)
-	fmt.Printf("RedisConfigPath: %s\n", RedisConfigPath)
-	fmt.Printf("RedisHostDataPath: %s\n", RedisHostDataPath)
-	fmt.Printf("RedisConfigDataPath: %s\n", RedisConfigDataPath)
-	fmt.Printf("RuntimeStateDir: %s\n", RuntimeStateDir)
-	fmt.Printf("ConfigSaveFileName: %s\n", ConfigSaveFileName)
-	fmt.Printf("ContainerInfoFile: %s\n", ContainerInfoFile)
-	fmt.Printf("KubeConfigPath: %s\n", KubeConfigPath)
-	fmt.Printf("KubeNamespace: %s\n", KubeNamespace)
-	fmt.Printf("BaseNodePort: %d\n", BaseNodePort)
-	fmt.Printf("RedisContainerPort: %d\n", RedisContainerPort)
-	fmt.Printf("ImageName: %s\n", imageName)
-}
-
-func InitConfig() error {
+func InitConfig() (*RuntimeConfig, error) {
 	config := NewConfig()
-	err := config.ReadConfig()
+	cfg, err := config.ReadConfig()
 	if err != nil {
-		return fmt.Errorf("failed to initialize config: %w", err)
+		return nil, fmt.Errorf("failed to initialize config: %w", err)
 	}
-	config.PrintConfig()
-	return nil
+	cfg.PrintConfig()
+	return cfg, nil
 }

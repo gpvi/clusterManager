@@ -4,12 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+
 	"redisClusterManager/utils"
-
-	"github.com/go-redis/redis/v8"
 )
-
-var cliRedis *redis.Client
 
 type RedisClusterConfig struct {
 	NodesPerShard int    `yaml:"nodes_per_shard"`
@@ -24,20 +21,21 @@ func (c RedisClusterConfig) EffectiveNodesPerShard() int {
 	return c.LegacyReplica
 }
 
-func CreateClusterAction(ctx context.Context, shardCount int, nodesPerShard int, clusterName string) error {
-	var err error
-
-	err = InitConfig()
+func CreateClusterAction(ctx context.Context, shardCount int, nodesPerShard int, clusterName string, redisPort uint16) error {
+	cfg, err := InitConfig()
 	if err != nil {
 		return fmt.Errorf("init config fail: %v", err)
 	}
+	if redisPort != 0 {
+		cfg.RedisContainerPort = redisPort
+	}
 
-	clientset, _, err := NewK8sClientset()
+	clientset, _, err := NewK8sClientset(cfg.KubeConfigPath)
 	if err != nil {
 		return fmt.Errorf("create k8s clientset fail: %v", err)
 	}
 
-	nodeManager := NewK8sNodeManager(clientset, KubeNamespace)
+	nodeManager := NewK8sNodeManager(clientset, cfg.KubeNamespace, cfg)
 	clusterManager := NewClusterManager(nodesPerShard, nodeManager)
 
 	if shardCount <= 0 {
@@ -88,13 +86,13 @@ func CreateClusterAction(ctx context.Context, shardCount int, nodesPerShard int,
 
 	println("Create succeed!")
 
-	clusterStateDir := ClusterStateDir(clusterName)
-	containerInfoPath := ClusterContainerInfoPath(clusterName)
-	runtimeConfigPath := ClusterRuntimeConfigPath(clusterName)
+	clusterStateDir := cfg.ClusterStateDir(clusterName)
+	containerInfoPath := cfg.ClusterContainerInfoPath(clusterName)
+	runtimeConfigPath := cfg.ClusterRuntimeConfigPath(clusterName)
 
 	config := RedisClusterConfig{
 		NodesPerShard: clusterManager.NodesPerShard,
-		Port:          RedisContainerPort,
+		Port:          cfg.RedisContainerPort,
 	}
 
 	if err := nodeManager.SaveToJSON(containerInfoPath); err != nil {

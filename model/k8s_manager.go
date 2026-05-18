@@ -60,6 +60,7 @@ func (node *RuntimeNode) CloseRedisClient(cli *redis.Client) error {
 type K8sNodeManager struct {
 	clientset kubernetes.Interface
 	namespace string
+	config    *RuntimeConfig
 	IPToNode  map[string]*RuntimeNode
 	Num       int
 	IDToNode  map[string]*RuntimeNode
@@ -67,10 +68,11 @@ type K8sNodeManager struct {
 	PodSet    map[string]bool
 }
 
-func NewK8sNodeManager(clientset kubernetes.Interface, namespace string) *K8sNodeManager {
+func NewK8sNodeManager(clientset kubernetes.Interface, namespace string, config *RuntimeConfig) *K8sNodeManager {
 	return &K8sNodeManager{
 		clientset: clientset,
 		namespace: namespace,
+		config:    config,
 		IPToNode:  make(map[string]*RuntimeNode),
 		IDToNode:  make(map[string]*RuntimeNode),
 		Nodes:     make([]*RuntimeNode, 0, 10),
@@ -108,16 +110,16 @@ func (c *K8sNodeManager) CountByCluster(clusterName string) int {
 func (c *K8sNodeManager) CreatePods(ctx context.Context, nodeNum int, clusterName string) error {
 	start := c.Num + 1
 	end := c.Num + nodeNum
+	const podReadyTimeout = 5 * time.Minute
 
 	configMapName := clusterName + "-redis-config"
 	if err := c.createConfigMap(ctx, clusterName, configMapName); err != nil {
 		return fmt.Errorf("failed to create ConfigMap: %w", err)
 	}
 
-	for i := start; i <= end; i++ {
+	podTemplate := func(i int) *corev1.Pod {
 		podName := fmt.Sprintf("%s-redis-%d", clusterName, i)
-
-		pod := &corev1.Pod{
+		return &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      podName,
 				Namespace: c.namespace,
@@ -132,16 +134,16 @@ func (c *K8sNodeManager) CreatePods(ctx context.Context, nodeNum int, clusterNam
 				Containers: []corev1.Container{
 					{
 						Name:  "redis",
-						Image: imageName,
+						Image: c.config.ImageName,
 						Command: []string{
 							"redis-server",
 							"/data/redis/config/redis.conf",
-							"--port", strconv.Itoa(int(RedisContainerPort)),
-							"--cluster-announce-bus-port", strconv.Itoa(int(RedisContainerPort + 10000)),
+							"--port", strconv.Itoa(int(c.config.RedisContainerPort)),
+							"--cluster-announce-bus-port", strconv.Itoa(int(c.config.RedisContainerPort + 10000)),
 						},
 						Ports: []corev1.ContainerPort{
-							{Name: "redis", ContainerPort: int32(RedisContainerPort)},
-							{Name: "bus", ContainerPort: int32(RedisContainerPort + 10000)},
+							{Name: "redis", ContainerPort: int32(c.config.RedisContainerPort)},
+							{Name: "bus", ContainerPort: int32(c.config.RedisContainerPort + 10000)},
 						},
 						Env: []corev1.EnvVar{
 							{
@@ -177,49 +179,97 @@ func (c *K8sNodeManager) CreatePods(ctx context.Context, nodeNum int, clusterNam
 				RestartPolicy: corev1.RestartPolicyNever,
 			},
 		}
-
-		created, err := c.clientset.CoreV1().Pods(c.namespace).Create(ctx, pod, metav1.CreateOptions{})
-		if err != nil {
-			return fmt.Errorf("failed to create pod %s: %w", podName, err)
-		}
-		c.PodSet[created.Name] = true
-		fmt.Printf("Pod created: %s\n", created.Name)
 	}
 
-	for podName := range c.PodSet {
-		var pod *corev1.Pod
-		var err error
-		for {
-			pod, err = c.clientset.CoreV1().Pods(c.namespace).Get(ctx, podName, metav1.GetOptions{})
+	// Phase 1: create pods concurrently
+	type createResult struct {
+		name string
+		err  error
+	}
+	createCh := make(chan createResult, nodeNum)
+	for i := start; i <= end; i++ {
+		go func(idx int) {
+			pod := podTemplate(idx)
+			created, err := c.clientset.CoreV1().Pods(c.namespace).Create(ctx, pod, metav1.CreateOptions{})
 			if err != nil {
-				return fmt.Errorf("failed to get pod %s: %w", podName, err)
+				createCh <- createResult{err: fmt.Errorf("failed to create pod %s: %w", pod.Name, err)}
+				return
 			}
-			if pod.Status.Phase == corev1.PodRunning && pod.Status.PodIP != "" {
-				fmt.Printf("Pod %s is running with IP %s\n", podName, pod.Status.PodIP)
-				break
+			createCh <- createResult{name: created.Name}
+		}(i)
+	}
+
+	podNames := make([]string, 0, nodeNum)
+	for i := 0; i < nodeNum; i++ {
+		r := <-createCh
+		if r.err != nil {
+			return r.err
+		}
+		c.PodSet[r.name] = true
+		podNames = append(podNames, r.name)
+		fmt.Printf("Pod created: %s\n", r.name)
+	}
+
+	// Phase 2: wait for all pods to be ready concurrently (with timeout)
+	type readyResult struct {
+		node RuntimeNode
+		err  error
+	}
+	readyCh := make(chan readyResult, len(podNames))
+	for _, podName := range podNames {
+		go func(name string) {
+			var pod *corev1.Pod
+			var err error
+			deadline := time.Now().Add(podReadyTimeout)
+			for {
+				if time.Now().After(deadline) {
+					readyCh <- readyResult{err: fmt.Errorf("timed out waiting for pod %s to become ready", name)}
+					return
+				}
+				select {
+				case <-ctx.Done():
+					readyCh <- readyResult{err: ctx.Err()}
+					return
+				default:
+				}
+
+				pod, err = c.clientset.CoreV1().Pods(c.namespace).Get(ctx, name, metav1.GetOptions{})
+				if err != nil {
+					readyCh <- readyResult{err: fmt.Errorf("failed to get pod %s: %w", name, err)}
+					return
+				}
+				if pod.Status.Phase == corev1.PodRunning && pod.Status.PodIP != "" {
+					fmt.Printf("Pod %s is running with IP %s\n", name, pod.Status.PodIP)
+					break
+				}
+				fmt.Printf("Waiting for pod %s (phase=%s)...\n", name, pod.Status.Phase)
+				time.Sleep(2 * time.Second)
 			}
-			fmt.Printf("Waiting for pod %s (phase=%s)...\n", podName, pod.Status.Phase)
-			time.Sleep(2 * time.Second)
-		}
 
-		nodePort, err := c.createServiceForPod(ctx, pod, clusterName)
-		if err != nil {
-			return fmt.Errorf("failed to create service for pod %s: %w", podName, err)
-		}
+			nodePort, err := c.createServiceForPod(ctx, pod, clusterName)
+			if err != nil {
+				readyCh <- readyResult{err: fmt.Errorf("failed to create service for pod %s: %w", name, err)}
+				return
+			}
 
-		node := RuntimeNode{
-			Name:        pod.Name,
-			HostIP:      "127.0.0.1",
-			HostPort:    nodePort,
-			ConIp:       pod.Status.PodIP,
-			ID:          string(pod.UID),
-			ConPort:     RedisContainerPort,
-			ClusterName: clusterName,
+			readyCh <- readyResult{node: RuntimeNode{
+				Name:        pod.Name,
+				HostIP:      "127.0.0.1",
+				HostPort:    nodePort,
+				ConIp:       pod.Status.PodIP,
+				ID:          string(pod.UID),
+				ConPort:     c.config.RedisContainerPort,
+				ClusterName: clusterName,
+			}}
+		}(podName)
+	}
+
+	for range podNames {
+		r := <-readyCh
+		if r.err != nil {
+			return r.err
 		}
-		c.Nodes = append(c.Nodes, &node)
-		c.IDToNode[node.ID] = &node
-		c.IPToNode[node.ConIp] = &node
-		c.Num++
+		c.AddRuntimeNode(&r.node)
 	}
 
 	return nil
@@ -247,8 +297,8 @@ func (c *K8sNodeManager) createServiceForPod(ctx context.Context, pod *corev1.Po
 			Ports: []corev1.ServicePort{
 				{
 					Name:       "redis",
-					Port:       int32(RedisContainerPort),
-					TargetPort: intstr.FromInt(int(RedisContainerPort)),
+					Port:       int32(c.config.RedisContainerPort),
+					TargetPort: intstr.FromInt(int(c.config.RedisContainerPort)),
 					Protocol:   corev1.ProtocolTCP,
 				},
 			},
@@ -266,7 +316,7 @@ func (c *K8sNodeManager) createServiceForPod(ctx context.Context, pod *corev1.Po
 }
 
 func (c *K8sNodeManager) createConfigMap(ctx context.Context, clusterName, configMapName string) error {
-	configFilePath := filepath.Join(RedisHostConfigPath, "redis.conf")
+	configFilePath := filepath.Join(c.config.RedisHostConfigPath, "redis.conf")
 	configData, err := os.ReadFile(configFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to read redis.conf from %s: %w", configFilePath, err)
@@ -330,7 +380,7 @@ func (c *K8sNodeManager) ListPodsByCluster(ctx context.Context, clusterName stri
 			HostPort:    hostPort,
 			ConIp:       pod.Status.PodIP,
 			ID:          string(pod.UID),
-			ConPort:     RedisContainerPort,
+			ConPort:     c.config.RedisContainerPort,
 			ClusterName: pod.Labels["cluster-name"],
 		}
 		c.Nodes = append(c.Nodes, &node)

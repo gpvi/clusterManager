@@ -33,8 +33,8 @@ func TestResolveLocalAbsPathResolvesRelativePath(t *testing.T) {
 }
 
 func TestContainerConfigPathUsesUnixSeparators(t *testing.T) {
-	RedisConfigPath = "/data/redis/config"
-	got := path.Join(RedisConfigPath, "redis.conf")
+	cfg := &RuntimeConfig{RedisConfigPath: "/data/redis/config"}
+	got := path.Join(cfg.RedisConfigPath, "redis.conf")
 	want := "/data/redis/config/redis.conf"
 	if got != want {
 		t.Fatalf("container config path = %q, want %q", got, want)

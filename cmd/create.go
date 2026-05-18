@@ -11,13 +11,14 @@ import (
 var shardCount int
 var nodesPerShard int
 var clusterName string
+var redisPort uint16
 
 var createCmd = &cobra.Command{
 	Use:   "create",
 	Short: "create a Redis cluster",
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx := context.Background()
-		err := model.CreateClusterAction(ctx, shardCount, nodesPerShard, clusterName)
+		err := model.CreateClusterAction(ctx, shardCount, nodesPerShard, clusterName, redisPort)
 		if err != nil {
 			log.Printf("CreateClusterAction Error: %v", err)
 		}
@@ -28,7 +29,7 @@ func init() {
 	createCmd.Flags().IntVarP(&shardCount, "shards", "s", 3, "Number of shards to create")
 	createCmd.Flags().IntVarP(&nodesPerShard, "nodes-per-shard", "r", 2, "Number of Redis nodes in each shard, including the master")
 	createCmd.Flags().StringVarP(&clusterName, "clusterName", "n", "cluster", "Name of the cluster")
-	createCmd.Flags().Uint16VarP(&model.RedisContainerPort, "port", "p", 6379, "Port of the Redis container")
+	createCmd.Flags().Uint16VarP(&redisPort, "port", "p", 6379, "Port of the Redis container")
 	createCmd.Flags().IntVar(&shardCount, "shaderNum", 3, "Deprecated alias for --shards")
 	_ = createCmd.Flags().MarkDeprecated("shaderNum", "use --shards instead")
 	createCmd.Flags().IntVar(&nodesPerShard, "replica", 2, "Deprecated alias for --nodes-per-shard")

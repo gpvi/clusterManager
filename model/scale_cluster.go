@@ -3,33 +3,33 @@ package model
 import (
 	"context"
 	"fmt"
+
 	"redisClusterManager/utils"
 )
 
 func ScaleClusterAction(ctx context.Context, additionalShards int, clusterName string) error {
-	var err error
-	err = InitConfig()
+	cfg, err := InitConfig()
 	if err != nil {
 		return err
 	}
 
-	clientset, _, err := NewK8sClientset()
+	clientset, _, err := NewK8sClientset(cfg.KubeConfigPath)
 	if err != nil {
 		return fmt.Errorf("create k8s clientset fail: %v", err)
 	}
 
-	runtimeConfigPath := ClusterRuntimeConfigPath(clusterName)
+	runtimeConfigPath := cfg.ClusterRuntimeConfigPath(clusterName)
 	var configFromFile RedisClusterConfig
 	err = utils.ReadFromYAMLFile(runtimeConfigPath, &configFromFile)
 	if err != nil {
 		return fmt.Errorf("error reading from YAML file: %s", err)
 	}
 	nodesPerShard := configFromFile.EffectiveNodesPerShard()
-	RedisContainerPort = configFromFile.Port
+	cfg.RedisContainerPort = configFromFile.Port
 	println("nodesPerShard:")
 	println(nodesPerShard)
 
-	nodeManager := NewK8sNodeManager(clientset, KubeNamespace)
+	nodeManager := NewK8sNodeManager(clientset, cfg.KubeNamespace, cfg)
 	clusterManager := NewClusterManager(nodesPerShard, nodeManager)
 
 	err = nodeManager.ListPodsByCluster(ctx, clusterName)

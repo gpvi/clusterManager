@@ -13,8 +13,7 @@ func TestCreation(t *testing.T) {
 
 	ctx := context.Background()
 	clusterName := "myCluster"
-	RedisContainerPort = 6379
-	err := CreateClusterAction(ctx, 3, 2, clusterName)
+	err := CreateClusterAction(ctx, 3, 2, clusterName, 6379)
 	if err != nil {
 		t.Fatal(err)
 	}

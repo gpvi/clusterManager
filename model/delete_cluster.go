@@ -4,24 +4,24 @@ import (
 	"context"
 	"fmt"
 	"os"
+
 	"redisClusterManager/utils"
 )
 
 func DeleteAllContainers(ctx context.Context, clusterName string) error {
-	var err error
-	err = InitConfig()
+	cfg, err := InitConfig()
 	if err != nil {
 		return fmt.Errorf("init config fail: %v", err)
 	}
 
-	clientset, _, err := NewK8sClientset()
+	clientset, _, err := NewK8sClientset(cfg.KubeConfigPath)
 	if err != nil {
 		return fmt.Errorf("create k8s clientset fail: %v", err)
 	}
 
-	nodeManager := NewK8sNodeManager(clientset, KubeNamespace)
+	nodeManager := NewK8sNodeManager(clientset, cfg.KubeNamespace, cfg)
 
-	runtimeConfigPath := ClusterRuntimeConfigPath(clusterName)
+	runtimeConfigPath := cfg.ClusterRuntimeConfigPath(clusterName)
 	if utils.FileExists(runtimeConfigPath) {
 		fmt.Printf("File %s already exists, deleting...\n", runtimeConfigPath)
 		err := os.Remove(runtimeConfigPath)
@@ -30,7 +30,7 @@ func DeleteAllContainers(ctx context.Context, clusterName string) error {
 		}
 	}
 
-	containerFile := ClusterContainerInfoPath(clusterName)
+	containerFile := cfg.ClusterContainerInfoPath(clusterName)
 	if utils.FileExists(containerFile) {
 		fmt.Printf("File %s already exists, deleting...\n", containerFile)
 		err := os.Remove(containerFile)
@@ -44,7 +44,7 @@ func DeleteAllContainers(ctx context.Context, clusterName string) error {
 		return fmt.Errorf("delete resources fail: %v", err)
 	}
 
-	clusterStateDir := ClusterStateDir(clusterName)
+	clusterStateDir := cfg.ClusterStateDir(clusterName)
 	if entries, readErr := os.ReadDir(clusterStateDir); readErr == nil && len(entries) == 0 {
 		if err := os.Remove(clusterStateDir); err != nil {
 			return fmt.Errorf("error deleting cluster state dir: %v", err)
