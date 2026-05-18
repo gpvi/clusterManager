@@ -1,0 +1,128 @@
+syntax = "proto3";
+
+package rediscluster;
+
+option go_package = "redisClusterManager/proto;proto";
+
+// ── Cluster Service ──
+
+service RedisClusterService {
+  // Create a new Redis cluster (returns after complete)
+  rpc CreateCluster(CreateClusterRequest) returns (CreateClusterResponse);
+
+  // Create a new Redis cluster with streaming progress updates
+  rpc CreateClusterWithProgress(CreateClusterRequest) returns (stream CreateProgress);
+
+  // Get cluster status and topology
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+
+  // Scale cluster by changing shard count
+  rpc ScaleCluster(ScaleClusterRequest) returns (ScaleClusterResponse);
+
+  // List all Redis clusters
+  rpc ListClusters(ListClustersRequest) returns (ListClustersResponse);
+
+  // Run diagnostics on a cluster
+  rpc Diagnose(DiagnoseRequest) returns (DiagnoseResponse);
+
+  // Get K8s events for a cluster
+  rpc GetEvents(GetEventsRequest) returns (GetEventsResponse);
+
+  // Health check
+  rpc Health(HealthRequest) returns (HealthResponse);
+}
+
+// ── Messages ──
+
+message CreateClusterRequest {
+  string name = 1;
+  int32 shards = 2;
+  int32 nodes_per_shard = 3;
+  uint32 redis_port = 4;
+  string image = 5;
+}
+
+message CreateClusterResponse {
+  string name = 1;
+  string message = 2;
+  bool success = 3;
+}
+
+message CreateProgress {
+  string phase = 1;       // "CreatingPods" | "PodsReady" | "Meeting" | "AllocatingSlots" | "Ready"
+  int32 completed = 2;
+  int32 total = 3;
+  string message = 4;
+}
+
+message GetStatusRequest {
+  string name = 1;
+}
+
+message GetStatusResponse {
+  string name = 1;
+  string phase = 2;
+  int32 master_count = 3;
+  int32 total_nodes = 4;
+  string slot_balance = 5;
+  repeated NodeInfo nodes = 6;
+}
+
+message NodeInfo {
+  string id = 1;
+  string ip = 2;
+  uint32 port = 3;
+  string role = 4;
+  string master_id = 5;
+  repeated string slots = 6;
+  bool healthy = 7;
+}
+
+message ScaleClusterRequest {
+  string name = 1;
+  int32 shards = 2;
+}
+
+message ScaleClusterResponse {
+  string name = 1;
+  int32 shards = 2;
+  string message = 3;
+}
+
+message ListClustersRequest {}
+
+message ListClustersResponse {
+  repeated string names = 1;
+}
+
+message DiagnoseRequest {
+  string name = 1;
+}
+
+message DiagnoseResponse {
+  string name = 1;
+  string phase = 2;
+  repeated string issues = 3;
+  repeated string suggestions = 4;
+}
+
+message GetEventsRequest {
+  string name = 1;
+}
+
+message EventInfo {
+  string type = 1;
+  string reason = 2;
+  string message = 3;
+  string timestamp = 4;
+}
+
+message GetEventsResponse {
+  repeated EventInfo events = 1;
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  bool ok = 1;
+}

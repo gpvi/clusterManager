@@ -1,31 +1,31 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: cluster-toolserver
+  name: clusterd
   namespace: default
   labels:
-    app: cluster-toolserver
+    app: clusterd
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: cluster-toolserver
+      app: clusterd
   template:
     metadata:
       labels:
-        app: cluster-toolserver
+        app: clusterd
     spec:
       containers:
       - name: toolserver
-        image: cluster-toolserver:latest
+        image: clusterd:latest
         imagePullPolicy: IfNotPresent
-        command: ["/cluster-agent"]
+        command: ["/clusterd"]
         ports:
-        - containerPort: 8080
-          name: http
+        - containerPort: 50051
+          name: grpc
         env:
-        - name: TOOL_SERVER_PORT
-          value: "8080"
+        - name: GRPC_PORT
+          value: "50051"
         - name: KUBE_NAMESPACE
           valueFrom:
             fieldRef:
@@ -41,12 +41,12 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: cluster-toolserver
+  name: clusterd
   namespace: default
 spec:
   selector:
-    app: cluster-toolserver
+    app: clusterd
   ports:
-  - port: 8080
-    targetPort: 8080
-    name: http
+  - port: 50051
+    targetPort: 50051
+    name: grpc
