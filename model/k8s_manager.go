@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -495,7 +494,7 @@ func (c *K8sNodeManager) SaveToJSON(filename string) error {
 	return nil
 }
 
-func CreateRedisClient(ctx context.Context, ip string, port uint16) *redis.Client {
+func CreateRedisClient(ctx context.Context, ip string, port uint16) (*redis.Client, error) {
 	addr := fmt.Sprintf("%s:%d", ip, port)
 
 	client := redis.NewClient(&redis.Options{
@@ -504,13 +503,8 @@ func CreateRedisClient(ctx context.Context, ip string, port uint16) *redis.Clien
 
 	_, err := client.Ping(ctx).Result()
 	if err != nil {
-		log.Fatalf("could not connect to Redis: %v", err)
+		client.Close()
+		return nil, fmt.Errorf("could not connect to Redis at %s: %w", addr, err)
 	}
-	return client
-}
-
-func CloseRedisClient(ctx context.Context, client *redis.Client) {
-	if err := client.Close(); err != nil {
-		log.Fatalf("could not close Redis: %v", err)
-	}
+	return client, nil
 }

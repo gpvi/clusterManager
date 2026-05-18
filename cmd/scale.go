@@ -3,8 +3,9 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"github.com/spf13/cobra"
 	"redisClusterManager/model"
+
+	"github.com/spf13/cobra"
 )
 
 var additionalShards int
@@ -17,9 +18,9 @@ var scaleCmd = &cobra.Command{
 			return fmt.Errorf("please input clustername first")
 		}
 		ctx := context.Background()
-		err := model.ScaleClusterAction(ctx, additionalShards, clusterName)
+		err := model.ScaleClusterAction(ctx, appConfig, additionalShards, clusterName)
 		if err != nil {
-			fmt.Printf("ScaleCluster() error = %v\n", err)
+			return fmt.Errorf("ScaleCluster() error: %w", err)
 		}
 		return nil
 	},

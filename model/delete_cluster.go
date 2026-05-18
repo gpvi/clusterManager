@@ -8,11 +8,8 @@ import (
 	"redisClusterManager/utils"
 )
 
-func DeleteAllContainers(ctx context.Context, clusterName string) error {
-	cfg, err := InitConfig()
-	if err != nil {
-		return fmt.Errorf("init config fail: %v", err)
-	}
+func DeleteAllContainers(ctx context.Context, cfg *RuntimeConfig, clusterName string) error {
+	var err error
 
 	clientset, _, err := NewK8sClientset(cfg.KubeConfigPath)
 	if err != nil {

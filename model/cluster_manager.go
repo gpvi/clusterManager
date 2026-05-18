@@ -188,7 +188,7 @@ func (c *ClusterManager) UpdateAfterMeet(ctx context.Context, LoginNode *Runtime
 		if _, exist := c.IDToClusterNode[node.ID]; exist {
 			continue
 		}
-		c.AlreadyMeetNode[node.ID] = true
+		c.AlreadyMeetNode[node.IP] = true
 		c.IDToClusterNode[node.ID] = &node
 		c.IPToClusterID[node.IP] = node.ID
 		c.ClusterNodeList = append(c.ClusterNodeList, &node)
@@ -283,7 +283,7 @@ func (c *ClusterManager) MeetNodes(client *redis.Client, ctx context.Context, cl
 		if node.ClusterName != clusterName {
 			continue
 		}
-		_, exist := c.AlreadyMeetNode[node.HostIP]
+		_, exist := c.AlreadyMeetNode[node.ConIp]
 		if !exist {
 			_, err = client.ClusterMeet(ctx, node.ConIp, strconv.Itoa(int(c.nodeManager.config.RedisContainerPort))).Result()
 			if err != nil {
@@ -366,15 +366,13 @@ func (c *ClusterManager) SetAllNodeRole(ctx context.Context, clusterName string)
 func (c *ClusterManager) SetNodeAsSlave(ctx context.Context, masterIP string, slaveIP string, clusterName string) error {
 	var err error
 	slaveAddr := slaveIP
-	cli := CreateRedisClient(ctx, "127.0.0.1", c.nodeManager.IPToNode[slaveAddr].HostPort)
-	defer func() {
-		err = cli.Close()
-		fmt.Println(err)
-	}()
-	println("-----------------------------")
+	cli, err := CreateRedisClient(ctx, "127.0.0.1", c.nodeManager.IPToNode[slaveAddr].HostPort)
+	if err != nil {
+		return fmt.Errorf("failed to create Redis client: %w", err)
+	}
+	defer cli.Close()
 	slaveAddrPort := fmt.Sprintf("%v:%d", slaveIP, c.nodeManager.IPToNode[slaveAddr].HostPort)
-	println("slave:", slaveAddrPort)
-	println("id:", c.IPToClusterID[slaveIP])
+	fmt.Printf("slave: %s\nid: %s\n", slaveAddrPort, c.IPToClusterID[slaveIP])
 
 	masterID := c.IPToClusterID[masterIP]
 	cmdMessage := cli.ClusterReplicate(ctx, masterID)
@@ -437,12 +435,11 @@ func (c *ClusterManager) AllocateSlots(ctx context.Context, clusterName string) 
 
 		masterId := c.MasterIDs[i]
 		port := c.nodeManager.IPToNode[c.IDToClusterNode[masterId].IP].HostPort
-		cliClusterMaster := CreateRedisClient(ctx, "127.0.0.1", port)
-		defer func() {
-			if err := cliClusterMaster.Close(); err != nil {
-				fmt.Printf("Error closing Redis client: %v\n", err)
-			}
-		}()
+		cliClusterMaster, err := CreateRedisClient(ctx, "127.0.0.1", port)
+		if err != nil {
+			return fmt.Errorf("failed to create Redis client: %w", err)
+		}
+		defer cliClusterMaster.Close()
 		var slots = make([]int, 0)
 		for j := startPoint; j <= endPoint; j++ {
 			slots = append(slots, j)
@@ -460,15 +457,14 @@ func (c *ClusterManager) AllocateSlots(ctx context.Context, clusterName string) 
 
 func (c *ClusterManager) PrintClusterNodesInfo(ctx context.Context) error {
 	time.Sleep(time.Duration(len(c.ClusterNodeList)/3) * time.Second)
-	var err error
-	client := CreateRedisClient(ctx, c.nodeManager.Nodes[0].HostIP, c.nodeManager.Nodes[0].HostPort)
-	defer func() {
-		err = client.Close()
-		fmt.Println(err)
-	}()
+	client, err := CreateRedisClient(ctx, c.nodeManager.Nodes[0].HostIP, c.nodeManager.Nodes[0].HostPort)
+	if err != nil {
+		return fmt.Errorf("failed to create Redis client: %w", err)
+	}
+	defer client.Close()
 	nodesInfo, err := client.ClusterNodes(ctx).Result()
 	if err != nil {
-		println("failed to get cluster nodes info: %v", err)
+		return fmt.Errorf("failed to get cluster nodes info: %w", err)
 	}
 	println("\ncluster nodes lines:")
 	lines := strings.Split(nodesInfo, "\n")
@@ -489,32 +485,21 @@ func (c *ClusterManager) PrintClusterNodesInfo(ctx context.Context) error {
 }
 
 func (c *ClusterManager) MigrateSlot(ctx context.Context, slot int, sourceNodeID, destNodeID string) error {
-	var err error
 	sourceNode := c.IDToClusterNode[sourceNodeID]
 	destNode := c.IDToClusterNode[destNodeID]
-	desCli := CreateRedisClient(ctx, c.nodeManager.IPToNode[destNode.IP].HostIP, c.nodeManager.IPToNode[destNode.IP].HostPort)
-	defer func() {
-		err = desCli.Close()
-		if err != nil {
-			log.Printf("close cluster master fail: %v", err)
-		}
-	}()
+	desCli, err := CreateRedisClient(ctx, c.nodeManager.IPToNode[destNode.IP].HostIP, c.nodeManager.IPToNode[destNode.IP].HostPort)
+	if err != nil {
+		return fmt.Errorf("failed to create Redis client: %w", err)
+	}
+	defer desCli.Close()
 	if _, exist := c.MasterToSlave[sourceNode.ID]; !exist {
 		return fmt.Errorf("source node %s is not a master node", sourceNodeID)
 	}
-	sourceCli := CreateRedisClient(ctx, c.nodeManager.IPToNode[sourceNode.IP].HostIP, c.nodeManager.IPToNode[sourceNode.IP].HostPort)
-	defer func() {
-		err = sourceCli.Close()
-		if err != nil {
-			log.Printf("close cluster master fail: %v", err)
-		}
-	}()
-	defer func() {
-		err = desCli.Close()
-		if err != nil {
-			fmt.Printf("Redsi %v", err)
-		}
-	}()
+	sourceCli, err := CreateRedisClient(ctx, c.nodeManager.IPToNode[sourceNode.IP].HostIP, c.nodeManager.IPToNode[sourceNode.IP].HostPort)
+	if err != nil {
+		return fmt.Errorf("failed to create Redis client: %w", err)
+	}
+	defer sourceCli.Close()
 
 	_, err = utils.ExecuteClusterCommand(ctx, desCli, "cluster", "SETSLOT", strconv.Itoa(slot), "IMPORTING", sourceNodeID)
 	if err != nil {
@@ -644,20 +629,23 @@ func (c *ClusterManager) sortClusterNodesByIP(nodes []*ClusterNode) {
 }
 
 func (c *ClusterManager) GetClusterNodes(ctx context.Context, LoginNode *RuntimeNode, clusterName string) ([]ClusterNode, error) {
-	var err error
 	if len(c.nodeManager.Nodes) == 0 {
 		return nil, fmt.Errorf("no pods found")
 	}
-	client := CreateRedisClient(ctx, LoginNode.HostIP, LoginNode.HostPort)
-	defer func() {
-		err = client.Close()
-		if err != nil {
-			fmt.Printf("Error closing Redis client: %v", err)
-		}
-	}()
+	client, err := CreateRedisClient(ctx, LoginNode.HostIP, LoginNode.HostPort)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Redis client: %w", err)
+	}
+	defer client.Close()
 
 	nodesInfo, err := client.ClusterNodes(ctx).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cluster nodes: %w", err)
+	}
 	nodes, err := c.ParseRedisClusterNodes(ctx, nodesInfo, clusterName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse cluster nodes: %w", err)
+	}
 
 	return nodes, nil
 }
@@ -760,21 +748,27 @@ func (c *ClusterManager) VerifyAllocateSlots(ctx context.Context, nodeManager *K
 			if err != nil {
 				return err
 			}
-			Flag := false
+			if len(cluster.MasterIDs) == 0 {
+				break
+			}
+			slotsPerMaster := TotalSlots / len(cluster.MasterIDs)
+			remainder := TotalSlots % len(cluster.MasterIDs)
+			ok := true
 			for i := 0; i < len(cluster.MasterIDs); i++ {
-				if i == len(cluster.MasterIDs)-1 && TotalSlots%len(cluster.MasterIDs) != 0 {
-					if cluster.IDToClusterNode[cluster.MasterIDs[i]].SlotsNum == TotalSlots%len(cluster.MasterIDs) {
-						Flag = true
-					}
-				} else {
-					if cluster.IDToClusterNode[cluster.MasterIDs[i]].SlotsNum == TotalSlots/len(cluster.MasterIDs) {
-						Flag = true
-					}
+				expectedSlots := slotsPerMaster
+				if i == len(cluster.MasterIDs)-1 && remainder != 0 {
+					expectedSlots = remainder
 				}
-				if !Flag {
+				if cluster.IDToClusterNode[cluster.MasterIDs[i]].SlotsNum != expectedSlots {
+					ok = false
 					break
 				}
 			}
+			if ok {
+				break
+			}
+			fmt.Printf("slot verification attempt %d/%d, retrying...\n", j+1, tryTimes)
+			time.Sleep(2 * time.Second)
 		}
 
 	}
@@ -806,14 +800,14 @@ func (c *ClusterManager) ParseRedisClusterNodes(ctx context.Context, data string
 			}
 		}
 		if clusterIndex >= 0 {
-			client := CreateRedisClient(ctx, c.nodeManager.Nodes[clusterIndex].HostIP, c.nodeManager.Nodes[clusterIndex].HostPort)
-			defer func() {
-				if err := client.Close(); err != nil {
-					log.Printf("failed to close redis client: %v", err)
+			client, err := CreateRedisClient(ctx, c.nodeManager.Nodes[clusterIndex].HostIP, c.nodeManager.Nodes[clusterIndex].HostPort)
+			if err != nil {
+				log.Printf("failed to create Redis client for forget: %v", err)
+			} else {
+				defer client.Close()
+				for _, id := range failedIDs {
+					client.ClusterForget(ctx, id)
 				}
-			}()
-			for _, id := range failedIDs {
-				client.ClusterForget(ctx, id)
 			}
 		}
 	}

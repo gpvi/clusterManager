@@ -18,7 +18,13 @@ var createCmd = &cobra.Command{
 	Short: "create a Redis cluster",
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx := context.Background()
-		err := model.CreateClusterAction(ctx, shardCount, nodesPerShard, clusterName, redisPort)
+		if appConfig == nil {
+			log.Fatal("config not initialized")
+		}
+		if redisPort != 0 {
+			appConfig.RedisContainerPort = redisPort
+		}
+		err := model.CreateClusterAction(ctx, appConfig, shardCount, nodesPerShard, clusterName)
 		if err != nil {
 			log.Printf("CreateClusterAction Error: %v", err)
 		}

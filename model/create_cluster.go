@@ -21,14 +21,8 @@ func (c RedisClusterConfig) EffectiveNodesPerShard() int {
 	return c.LegacyReplica
 }
 
-func CreateClusterAction(ctx context.Context, shardCount int, nodesPerShard int, clusterName string, redisPort uint16) error {
-	cfg, err := InitConfig()
-	if err != nil {
-		return fmt.Errorf("init config fail: %v", err)
-	}
-	if redisPort != 0 {
-		cfg.RedisContainerPort = redisPort
-	}
+func CreateClusterAction(ctx context.Context, cfg *RuntimeConfig, shardCount int, nodesPerShard int, clusterName string) error {
+	var err error
 
 	clientset, _, err := NewK8sClientset(cfg.KubeConfigPath)
 	if err != nil {

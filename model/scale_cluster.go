@@ -7,11 +7,8 @@ import (
 	"redisClusterManager/utils"
 )
 
-func ScaleClusterAction(ctx context.Context, additionalShards int, clusterName string) error {
-	cfg, err := InitConfig()
-	if err != nil {
-		return err
-	}
+func ScaleClusterAction(ctx context.Context, cfg *RuntimeConfig, additionalShards int, clusterName string) error {
+	var err error
 
 	clientset, _, err := NewK8sClientset(cfg.KubeConfigPath)
 	if err != nil {
@@ -47,7 +44,7 @@ func ScaleClusterAction(ctx context.Context, additionalShards int, clusterName s
 			break
 		}
 	}
-	if ClusterNodeIndex == -1 {
+	if ClusterNodeIndex >= nodeManager.Num {
 		return fmt.Errorf("cluster with name %s not found", clusterName)
 	}
 	err = clusterManager.UpdateAfterMeet(ctx, nodeManager.Nodes[ClusterNodeIndex], clusterName)

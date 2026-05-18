@@ -2,10 +2,17 @@ package cmd
 
 import (
 	"fmt"
+	"redisClusterManager/model"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
+
+var appConfig *model.RuntimeConfig
+
+func SetConfig(cfg *model.RuntimeConfig) {
+	appConfig = cfg
+}
 
 var RootCmd = &cobra.Command{
 	Use:   "cluster",
