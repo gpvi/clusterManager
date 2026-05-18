@@ -941,11 +941,7 @@ func parseClusterNodeLines(lines []string, clusterFilter func(ip string) bool) (
 			Port:            portUint16,
 			NodeType:        parseNodeType(fields[2]),
 			MasterID:        fields[3],
-			PingSent:        utils.ParseInt64(fields[4]),
-			PongRecv:        utils.ParseInt64(fields[5]),
-			ConfigEpoch:     utils.ParseInt64(fields[6]),
 			LinkState:       fields[7],
-			AdditionalFlags: parseAdditionalFlags(fields[2]),
 		}
 		if node.NodeType == Master && len(fields) > 8 {
 			slots, err := ParseSlots(fields[8:])
@@ -966,13 +962,3 @@ func parseNodeType(field string) string {
 	return Slave
 }
 
-func parseAdditionalFlags(field string) []string {
-	flags := strings.Split(field, ",")
-	var additionalFlags []string
-	for _, flag := range flags {
-		if flag != "master" && flag != "slave" {
-			additionalFlags = append(additionalFlags, flag)
-		}
-	}
-	return additionalFlags
-}

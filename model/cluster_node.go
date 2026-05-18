@@ -16,19 +16,15 @@ type SlotRange struct {
 	End   int
 }
 type ClusterNode struct {
-	ID              string      // 节点ID
-	IP              string      // IP地址
-	Port            uint16      // 端口号
-	NodeType        string      // 节点类型 (master 或 slave)
-	MasterID        string      // 对于slave节点，表示主节点的ID；对于master节点则为"-"
-	PingSent        int64       // 上次发送ping的时间戳
-	PongRecv        int64       // 上次接收到pong的时间戳
-	ConfigEpoch     int64       // 节点的配置纪元 (用于实现故障转移)
-	LinkState       string      // 节点的连接状态 (connected 或 disconnected)
-	Slots           []SlotRange // 负责的插槽范围 (对master节点有效)
-	AdditionalFlags []string    // 其他标志，如 myself
-	SlotsNum        int         // 节点负责的槽的数量
-	ClusterName     string      // 所属集群名字
+	ID          string      // 节点ID
+	IP          string      // IP地址
+	Port        uint16      // 端口号
+	NodeType    string      // 节点类型 (master 或 slave)
+	MasterID    string      // 对于slave节点，表示主节点的ID；对于master节点则为"-"
+	LinkState   string      // 节点的连接状态 (connected 或 disconnected)
+	Slots       []SlotRange // 负责的插槽范围 (对master节点有效)
+	SlotsNum    int         // 节点负责的槽的数量
+	ClusterName string      // 所属集群名字
 }
 
 func ParseSlots(slotStrs []string) ([]SlotRange, error) {
