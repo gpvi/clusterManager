@@ -69,11 +69,7 @@ func (s *clusterServer) CreateCluster(ctx context.Context, req *pb.CreateCluster
 
 	_, err := s.dynamicClient.Resource(gvr).Namespace(ns).Create(ctx, obj, metav1.CreateOptions{})
 	if err != nil {
-		return &pb.CreateClusterResponse{
-			Name:    name,
-			Message: fmt.Sprintf("failed to create CR: %v", err),
-			Success: false,
-		}, nil
+		return nil, status.Errorf(codes.Internal, "failed to create CR: %v", err)
 	}
 
 	return &pb.CreateClusterResponse{

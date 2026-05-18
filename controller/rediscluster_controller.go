@@ -181,6 +181,23 @@ func buildNodeStatus(clusterNodes []model.ClusterNode) []v1.NodeStatus {
 	return result
 }
 
+// assessHealth evaluates the health of cluster nodes and returns the overall
+// health status, master count, and the computed node status slice.
+func assessHealth(nodes []model.ClusterNode) (healthy bool, masterCount int, statusNodes []v1.NodeStatus) {
+	statusNodes = buildNodeStatus(nodes)
+	allHealthy, masterCount, statusNodes := assessHealth(nodes)
+	mc := 0
+	for _, ns := range statusNodes {
+		if ns.Role == model.Master {
+			mc++
+		}
+		if !ns.Healthy {
+			allHealthy = false
+		}
+	}
+	return allHealthy, mc, statusNodes
+}
+
 // ---------------------------------------------------------------------------
 // Reconcile
 // ---------------------------------------------------------------------------
@@ -390,17 +407,7 @@ func (c *RedisClusterController) handleReady(ctx context.Context, cr *v1.RedisCl
 	}
 
 	// 4. Evaluate health.
-	allHealthy := true
-	masterCount := 0
-	statusNodes := buildNodeStatus(nodes)
-	for _, ns := range statusNodes {
-		if ns.Role == model.Master {
-			masterCount++
-		}
-		if !ns.Healthy {
-			allHealthy = false
-		}
-	}
+	allHealthy, masterCount, statusNodes := assessHealth(nodes)
 
 	cr.Status.MasterCount = masterCount
 	cr.Status.TotalNodes = len(nodes)
@@ -490,17 +497,7 @@ func (c *RedisClusterController) handleDegraded(ctx context.Context, cr *v1.Redi
 		return fmt.Errorf("repair: ParseRedisClusterNodes failed: %w", err)
 	}
 
-	allHealthy := true
-	masterCount := 0
-	statusNodes := buildNodeStatus(nodes)
-	for _, ns := range statusNodes {
-		if ns.Role == model.Master {
-			masterCount++
-		}
-		if !ns.Healthy {
-			allHealthy = false
-		}
-	}
+	allHealthy, masterCount, statusNodes := assessHealth(nodes)
 
 	cr.Status.MasterCount = masterCount
 	cr.Status.TotalNodes = len(nodes)
