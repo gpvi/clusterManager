@@ -6,6 +6,50 @@ import (
 	"testing"
 )
 
+func TestParseClusterNodeLines_WithFailFlag(t *testing.T) {
+	data := `failnode1 10.0.0.1:6379@16379 fail - 0 0 0 disconnected`
+	lines := strings.Split(data, "\n")
+	parsed, failedIDs := parseClusterNodeLines(lines, nil)
+	if len(failedIDs) != 1 {
+		t.Errorf("expected 1 failed ID, got %d", len(failedIDs))
+	}
+	if len(parsed) != 0 {
+		t.Errorf("expected 0 parsed nodes, got %d", len(parsed))
+	}
+}
+
+func TestParseClusterNodeLines_EmptyInput(t *testing.T) {
+	parsed, failedIDs := parseClusterNodeLines(nil, nil)
+	if len(parsed) != 0 || len(failedIDs) != 0 {
+		t.Error("expected empty results for nil input")
+	}
+}
+
+func TestParseClusterNodeLines_BadSlotFormat(t *testing.T) {
+	data := `node1 10.0.0.2:6379@16379 master - 0 0 0 connected abc-xyz`
+	lines := strings.Split(data, "\n")
+	parsed, _ := parseClusterNodeLines(lines, func(ip string) bool { return true })
+	// Bad slot format should log and skip this node
+	if len(parsed) != 0 {
+		t.Errorf("expected 0 nodes (bad slot), got %d", len(parsed))
+	}
+}
+
+func TestParseClusterNodeLines_ClusterFilter(t *testing.T) {
+	data := `node1 10.0.0.1:6379 master - 0 0 0 connected
+node2 10.0.0.2:6379 master - 0 0 0 connected`
+	lines := strings.Split(data, "\n")
+	// Only accept 10.0.0.1
+	filter := func(ip string) bool { return ip == "10.0.0.1" }
+	parsed, _ := parseClusterNodeLines(lines, filter)
+	if len(parsed) != 1 {
+		t.Errorf("expected 1 filtered node, got %d", len(parsed))
+	}
+	if parsed[0].IP != "10.0.0.1" {
+		t.Errorf("expected 10.0.0.1, got %s", parsed[0].IP)
+	}
+}
+
 func TestParseClusterNodeLines(t *testing.T) {
 	data := `147ff14ec72be84cff55a4e05b3d32e2d727da95 10.88.3.59:6379@16379 master - 0 1725596407022 3 connected 0 2-5460 6000 7890
 c205ed8fd181f95b61d11525effdc478864c91d8 10.88.3.61:6379@16379 master - 0 1725596405004 0 connected 5461-10921
