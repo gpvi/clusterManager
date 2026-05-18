@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git checkout *)",
+      "Bash(git stash *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(go build *)",
+      "Bash(go mod *)",
+      "Bash(go test *)",
+      "Bash(go vet *)",
+      "Bash(python3 fixes.py)",
+      "Bash(python fixes.py)",
+      "Bash(python fixes_r4.py)",
+      "Bash(python fixes_r5.py)"
+    ]
+  }
+}
