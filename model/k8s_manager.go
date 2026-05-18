@@ -341,6 +341,12 @@ func (c *K8sNodeManager) createConfigMap(ctx context.Context, clusterName, confi
 }
 
 func (c *K8sNodeManager) ListPodsByCluster(ctx context.Context, clusterName string) error {
+	// Reset to avoid double-counting on repeated calls
+	c.Nodes = c.Nodes[:0]
+	c.IPToNode = make(map[string]*RuntimeNode)
+	c.IDToNode = make(map[string]*RuntimeNode)
+	c.Num = 0
+
 	labelSelector := fmt.Sprintf("cluster-name=%s,managed-by=clusterManager", clusterName)
 	podList, err := c.clientset.CoreV1().Pods(c.namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: labelSelector,

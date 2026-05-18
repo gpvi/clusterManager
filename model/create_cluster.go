@@ -47,7 +47,7 @@ func CreateClusterAction(ctx context.Context, cfg *RuntimeConfig, shardCount int
 		return fmt.Errorf("list cluster pods fail: %v", err)
 	}
 	if nodeManager.HasCluster(clusterName) {
-		return fmt.Errorf("cluster %s already exists with %d pod(s), please delete it before recreating", clusterName, nodeManager.CountByCluster(clusterName))
+		return fmt.Errorf("cluster %s already exists with %d pod(s), please delete it before recreating: %w", clusterName, nodeManager.CountByCluster(clusterName), ErrClusterExists)
 	}
 
 	defer func() {
@@ -61,19 +61,9 @@ func CreateClusterAction(ctx context.Context, cfg *RuntimeConfig, shardCount int
 		fmt.Printf("rolled back partially created cluster %s\n", clusterName)
 	}()
 
-	err = clusterManager.CreateCluster(shardCount, ctx, clusterName)
+	err = clusterManager.Bootstrap(ctx, shardCount, clusterName)
 	if err != nil {
-		return fmt.Errorf("create clusterNodes fail: %v", err)
-	}
-
-	err = clusterManager.SetAllNodeRole(ctx, clusterName)
-	if err != nil {
-		return fmt.Errorf("set node type fail: %v", err)
-	}
-
-	err = clusterManager.AllocateSlots(ctx, clusterName)
-	if err != nil {
-		return fmt.Errorf("allocate slots fail:%v", err)
+		return fmt.Errorf("bootstrap cluster fail: %v", err)
 	}
 
 	fmt.Println("Create succeed!")

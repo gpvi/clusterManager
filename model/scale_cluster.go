@@ -35,7 +35,7 @@ func ScaleClusterAction(ctx context.Context, cfg *RuntimeConfig, additionalShard
 	}
 
 	if nodeManager.Num == 0 {
-		return fmt.Errorf("Current pods num is 0, please create cluster first.")
+		return fmt.Errorf("current pods num is 0, please create cluster first: %w", ErrClusterNotFound)
 	}
 
 	ClusterNodeIndex := 0
@@ -45,7 +45,7 @@ func ScaleClusterAction(ctx context.Context, cfg *RuntimeConfig, additionalShard
 		}
 	}
 	if ClusterNodeIndex >= nodeManager.Num {
-		return fmt.Errorf("cluster with name %s not found", clusterName)
+		return fmt.Errorf("cluster with name %s not found: %w", clusterName, ErrClusterNotFound)
 	}
 	err = clusterManager.UpdateAfterMeet(ctx, nodeManager.Nodes[ClusterNodeIndex], clusterName)
 	if err != nil {

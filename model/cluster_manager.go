@@ -113,6 +113,66 @@ func (c *ClusterManager) CreateSource(ctx context.Context, clusterName string, s
 	return nil
 }
 
+// Bootstrap runs the complete cluster creation flow: pods -> ready -> MEET -> master/slave -> slots
+func (c *ClusterManager) Bootstrap(ctx context.Context, shardCount int, clusterName string) error {
+	var err error
+	sum := shardCount * c.NodesPerShard
+	err = c.CreateSource(ctx, clusterName, sum)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("finish created, %d shards, %d nodes per shard\n", shardCount, c.NodesPerShard)
+
+	meetNodeIndex := 0
+	var cliRedis *redis.Client
+	if len(c.nodeManager.Nodes) > 0 {
+		for ; meetNodeIndex < len(c.nodeManager.Nodes); meetNodeIndex++ {
+			if c.nodeManager.Nodes[meetNodeIndex].ClusterName == clusterName {
+				break
+			}
+		}
+		if meetNodeIndex >= len(c.nodeManager.Nodes) {
+			return fmt.Errorf("no node found for cluster %s: %w", clusterName, ErrClusterNotFound)
+		}
+		cliRedis, err = c.nodeManager.Nodes[meetNodeIndex].CreateRedisClient()
+		if err != nil {
+			return fmt.Errorf("create redis client fail")
+		}
+		defer func() {
+			if err := cliRedis.Close(); err != nil {
+				fmt.Printf("Error closing Redis client: %v\n", err)
+			}
+		}()
+	} else {
+		fmt.Println("No pods available.")
+	}
+
+	fmt.Println("start Meet...")
+	if cliRedis == nil {
+		return fmt.Errorf("no cluster node found for meeting")
+	}
+	err = c.MeetNodes(cliRedis, ctx, clusterName)
+	if err != nil {
+		return fmt.Errorf("meet nodes fail %v", err)
+	}
+	err = c.UpdateAfterMeet(ctx, c.nodeManager.Nodes[meetNodeIndex], clusterName)
+	if err != nil {
+		return err
+	}
+
+	err = c.SetAllNodeRole(ctx, clusterName)
+	if err != nil {
+		return fmt.Errorf("set node type fail: %v", err)
+	}
+
+	err = c.AllocateSlots(ctx, clusterName)
+	if err != nil {
+		return fmt.Errorf("allocate slots fail: %v", err)
+	}
+
+	return nil
+}
+
 func (c *ClusterManager) GetContainerNum() int {
 	return c.nodeManager.Num
 }
@@ -399,7 +459,7 @@ func (c *ClusterManager) SetNodeAsSlave(ctx context.Context, masterIP string, sl
 	}
 	fmt.Printf("Node %s set as replica of master %s\n", slaveAddrPort, masterIP)
 	if len(c.nodeManager.Nodes) == 0 {
-		return fmt.Errorf("no nodes available")
+		return fmt.Errorf("no nodes available: %w", ErrNoNodesAvailable)
 	}
 	err = c.UpdateAfterSetNodeRole(ctx, c.nodeManager.Nodes[0], clusterName)
 	if err != nil {
@@ -411,7 +471,7 @@ func (c *ClusterManager) SetNodeAsSlave(ctx context.Context, masterIP string, sl
 func (c *ClusterManager) AllocateSlots(ctx context.Context, clusterName string) error {
 	var err error
 	if len(c.nodeManager.Nodes) == 0 {
-		return fmt.Errorf("no nodes available")
+		return fmt.Errorf("no nodes available: %w", ErrNoNodesAvailable)
 	}
 	err = c.UpdateSlots(ctx, c.nodeManager.Nodes[0], clusterName)
 	if err != nil {
@@ -421,7 +481,7 @@ func (c *ClusterManager) AllocateSlots(ctx context.Context, clusterName string) 
 	numMasters := len(c.MasterIDs)
 	if numMasters == 0 {
 		fmt.Println("no current master node to allocate slots")
-		return fmt.Errorf("no available master nodes for slot allocation")
+		return fmt.Errorf("no available master nodes for slot allocation: %w", ErrNoNodesAvailable)
 	}
 	slotsPerMaster := TotalSlots / numMasters
 	for i := 0; i < numMasters; i++ {
@@ -464,7 +524,7 @@ func (c *ClusterManager) AllocateSlots(ctx context.Context, clusterName string) 
 
 func (c *ClusterManager) PrintClusterNodesInfo(ctx context.Context) error {
 	if len(c.nodeManager.Nodes) == 0 {
-		return fmt.Errorf("no nodes available")
+		return fmt.Errorf("no nodes available: %w", ErrNoNodesAvailable)
 	}
 	time.Sleep(time.Duration(len(c.ClusterNodeList)/3) * time.Second)
 	client, err := CreateRedisClient(ctx, c.nodeManager.Nodes[0].HostIP, c.nodeManager.Nodes[0].HostPort)
@@ -654,7 +714,7 @@ func (c *ClusterManager) sortClusterNodesByIP(nodes []*ClusterNode) {
 
 func (c *ClusterManager) GetClusterNodes(ctx context.Context, LoginNode *RuntimeNode, clusterName string) ([]ClusterNode, error) {
 	if len(c.nodeManager.Nodes) == 0 {
-		return nil, fmt.Errorf("no pods found")
+		return nil, fmt.Errorf("no pods found: %w", ErrClusterNotFound)
 	}
 	client, err := CreateRedisClient(ctx, LoginNode.HostIP, LoginNode.HostPort)
 	if err != nil {
