@@ -60,6 +60,9 @@ func ScaleClusterAction(ctx context.Context, cfg *RuntimeConfig, additionalShard
 		return fmt.Errorf("init slots info fail when add shard%v", err)
 	}
 
+	if additionalShards <= 0 {
+		return fmt.Errorf("additional shards must be greater than 0, got %d", additionalShards)
+	}
 	err = clusterManager.AddShards(ctx, additionalShards, clusterName)
 	if err != nil {
 		return err

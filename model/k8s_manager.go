@@ -46,17 +46,6 @@ func (node *RuntimeNode) CreateRedisClient() (*redis.Client, error) {
 	return cli, nil
 }
 
-func (node *RuntimeNode) CloseRedisClient(cli *redis.Client) error {
-	if cli != nil {
-		err := cli.Close()
-		if err != nil {
-			return fmt.Errorf("failed to close Redis client for node %s: %v", node.ID, err)
-		}
-		fmt.Printf("Redis client for node %s has been closed\n", node.ID)
-	}
-	return nil
-}
-
 type K8sNodeManager struct {
 	clientset kubernetes.Interface
 	namespace string
@@ -395,20 +384,6 @@ func (c *K8sNodeManager) ListPodsByCluster(ctx context.Context, clusterName stri
 	return nil
 }
 
-func (c *K8sNodeManager) LoadClusterPods(ctx context.Context) error {
-	podList, err := c.clientset.CoreV1().Pods(c.namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: "managed-by=clusterManager",
-	})
-	if err != nil {
-		return fmt.Errorf("failed to list pods: %w", err)
-	}
-	for _, pod := range podList.Items {
-		c.PodSet[pod.Name] = true
-	}
-	c.Num = len(podList.Items)
-	return nil
-}
-
 func (c *K8sNodeManager) DeleteResources(ctx context.Context, clusterName string) error {
 	labelSelector := fmt.Sprintf("cluster-name=%s,managed-by=clusterManager", clusterName)
 
@@ -463,24 +438,26 @@ func (c *K8sNodeManager) DeleteResources(ctx context.Context, clusterName string
 
 func (c *K8sNodeManager) SaveToJSON(filename string) error {
 	type ContainerInfo struct {
-		HostIP   string `json:"host_ip"`
-		HostPort uint16 `json:"host_port"`
-		ConIp    string `json:"con_ip"`
-		ConPort  uint16 `json:"con_port"`
-		ID       string `json:"id"`
-		Name     string `json:"name"`
+		HostIP      string `json:"host_ip"`
+		HostPort    uint16 `json:"host_port"`
+		ConIp       string `json:"con_ip"`
+		ConPort     uint16 `json:"con_port"`
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		ClusterName string `json:"cluster_name"`
 	}
 
 	var containerInfos []ContainerInfo
 
 	for _, node := range c.Nodes {
 		containerInfos = append(containerInfos, ContainerInfo{
-			HostIP:   node.HostIP,
-			HostPort: node.HostPort,
-			ConIp:    node.ConIp,
-			ConPort:  node.ConPort,
-			ID:       node.ID,
-			Name:     node.Name,
+			HostIP:      node.HostIP,
+			HostPort:    node.HostPort,
+			ConIp:       node.ConIp,
+			ConPort:     node.ConPort,
+			ID:          node.ID,
+			Name:        node.Name,
+			ClusterName: node.ClusterName,
 		})
 	}
 

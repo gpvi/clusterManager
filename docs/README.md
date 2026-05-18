@@ -36,7 +36,7 @@
 4. [06-开发与测试指南.md](./06-开发与测试指南.md)
 5. [04-当前状态与问题清单.md](./04-当前状态与问题清单.md)
 
-## 项目一句话
+## 项目总览
 
 `clusterManager` 是一个用 Go 编写的 Redis Cluster 编排工具，通过 Kubernetes API 创建 Redis Pod 和 Service，并通过 Redis Cluster 命令完成节点发现、主从配置、slot 分配和扩容迁移。
 

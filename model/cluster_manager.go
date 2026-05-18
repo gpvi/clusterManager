@@ -67,6 +67,9 @@ func (c *ClusterManager) CreateCluster(shardCount int, ctx context.Context, clus
 				break
 			}
 		}
+		if meetNodeIndex >= len(c.nodeManager.Nodes) {
+			return fmt.Errorf("no node found for cluster %s", clusterName)
+		}
 		cliRedis, err = c.nodeManager.Nodes[meetNodeIndex].CreateRedisClient()
 		if err != nil {
 			return fmt.Errorf("create redis client fail")
@@ -153,7 +156,7 @@ func (c *ClusterManager) AddShards(ctx context.Context, shardCount int, clusterN
 		if _, exist := IDToIP[masterID]; !exist {
 			continue
 		}
-		if c.nodeManager.IPToNode[masterIP].ClusterName != clusterName {
+		if masterRuntime, ok := c.nodeManager.IPToNode[masterIP]; !ok || masterRuntime.ClusterName != clusterName {
 			continue
 		}
 
@@ -270,9 +273,11 @@ func (c *ClusterManager) UpdateSlots(ctx context.Context, LoginNode *RuntimeNode
 	}
 	for _, node := range nodes {
 		if node.NodeType == Master {
-			c.IDToClusterNode[node.ID].SlotsNum = c.calculateSlots(node.Slots)
-			if len(node.Slots) == 0 {
-				c.EmptyMasters = append(c.EmptyMasters, &node)
+			if _, ok := c.IDToClusterNode[node.ID]; ok {
+				c.IDToClusterNode[node.ID].SlotsNum = c.calculateSlots(node.Slots)
+				if len(node.Slots) == 0 {
+					c.EmptyMasters = append(c.EmptyMasters, &node)
+				}
 			}
 		}
 	}
@@ -313,7 +318,13 @@ func (c *ClusterManager) MeetNodes(client *redis.Client, ctx context.Context, cl
 			return fmt.Errorf("failed to create Redis client for node %s: %v", node.ID, err)
 		}
 		Clients = append(Clients, cli)
-		err = c.waitForMeetSync(cli, ctx, len(nodes))
+		clusterNodeCount := 0
+		for _, n := range c.nodeManager.Nodes {
+			if n.ClusterName == clusterName {
+				clusterNodeCount++
+			}
+		}
+		err = c.waitForMeetSync(cli, ctx, clusterNodeCount)
 		if err != nil {
 			return fmt.Errorf("failed to wait for cluster sync: %v", err)
 		}
@@ -368,12 +379,16 @@ func (c *ClusterManager) SetAllNodeRole(ctx context.Context, clusterName string)
 func (c *ClusterManager) SetNodeAsSlave(ctx context.Context, masterIP string, slaveIP string, clusterName string) error {
 	var err error
 	slaveAddr := slaveIP
-	cli, err := CreateRedisClient(ctx, "127.0.0.1", c.nodeManager.IPToNode[slaveAddr].HostPort)
+	slaveNode, ok := c.nodeManager.IPToNode[slaveAddr]
+	if !ok {
+		return fmt.Errorf("slave node not found for IP %s", slaveAddr)
+	}
+	cli, err := CreateRedisClient(ctx, "127.0.0.1", slaveNode.HostPort)
 	if err != nil {
 		return fmt.Errorf("failed to create Redis client: %w", err)
 	}
 	defer cli.Close()
-	slaveAddrPort := fmt.Sprintf("%v:%d", slaveIP, c.nodeManager.IPToNode[slaveAddr].HostPort)
+	slaveAddrPort := fmt.Sprintf("%v:%d", slaveIP, slaveNode.HostPort)
 	fmt.Printf("slave: %s\nid: %s\n", slaveAddrPort, c.IPToClusterID[slaveIP])
 
 	masterID := c.IPToClusterID[masterIP]
@@ -417,8 +432,16 @@ func (c *ClusterManager) AllocateSlots(ctx context.Context, clusterName string) 
 		}
 
 		masterId := c.MasterIDs[i]
-		port := c.nodeManager.IPToNode[c.IDToClusterNode[masterId].IP].HostPort
-		cliClusterMaster, err := CreateRedisClient(ctx, "127.0.0.1", port)
+		masterNode, ok := c.IDToClusterNode[masterId]
+		if !ok {
+			return fmt.Errorf("master node not found for ID %s", masterId)
+		}
+		port, ok := c.nodeManager.IPToNode[masterNode.IP]
+		if !ok {
+			return fmt.Errorf("runtime node not found for IP %s", masterNode.IP)
+		}
+		port_val := port.HostPort
+		cliClusterMaster, err := CreateRedisClient(ctx, "127.0.0.1", port_val)
 		if err != nil {
 			return fmt.Errorf("failed to create Redis client: %w", err)
 		}
@@ -474,7 +497,14 @@ func (c *ClusterManager) PrintClusterNodesInfo(ctx context.Context) error {
 func (c *ClusterManager) MigrateSlot(ctx context.Context, slot int, sourceNodeID, destNodeID string) error {
 	sourceNode := c.IDToClusterNode[sourceNodeID]
 	destNode := c.IDToClusterNode[destNodeID]
-	desCli, err := CreateRedisClient(ctx, c.nodeManager.IPToNode[destNode.IP].HostIP, c.nodeManager.IPToNode[destNode.IP].HostPort)
+	if destNode == nil {
+		return fmt.Errorf("dest node not found for ID %s", destNodeID)
+	}
+	destRuntime, ok := c.nodeManager.IPToNode[destNode.IP]
+	if !ok {
+		return fmt.Errorf("runtime node not found for dest IP %s", destNode.IP)
+	}
+	desCli, err := CreateRedisClient(ctx, destRuntime.HostIP, destRuntime.HostPort)
 	if err != nil {
 		return fmt.Errorf("failed to create Redis client: %w", err)
 	}
@@ -482,7 +512,11 @@ func (c *ClusterManager) MigrateSlot(ctx context.Context, slot int, sourceNodeID
 	if _, exist := c.MasterToSlave[sourceNode.ID]; !exist {
 		return fmt.Errorf("source node %s is not a master node", sourceNodeID)
 	}
-	sourceCli, err := CreateRedisClient(ctx, c.nodeManager.IPToNode[sourceNode.IP].HostIP, c.nodeManager.IPToNode[sourceNode.IP].HostPort)
+	sourceRuntime, ok := c.nodeManager.IPToNode[sourceNode.IP]
+	if !ok {
+		return fmt.Errorf("runtime node not found for source IP %s", sourceNode.IP)
+	}
+	sourceCli, err := CreateRedisClient(ctx, sourceRuntime.HostIP, sourceRuntime.HostPort)
 	if err != nil {
 		return fmt.Errorf("failed to create Redis client: %w", err)
 	}
@@ -567,7 +601,10 @@ func (c *ClusterManager) MigratesSlotsToEmptyNode(ctx context.Context, clusterNa
 	newV := TotalSlots / len(c.MasterIDs)
 	index := 0
 	for _, masterID := range c.MasterIDs {
-		masterNode := c.IDToClusterNode[masterID]
+		masterNode, ok := c.IDToClusterNode[masterID]
+		if !ok {
+			continue
+		}
 		fromId := masterID
 		if masterNode.SlotsNum == 0 {
 			continue
@@ -679,7 +716,12 @@ func (c *ClusterManager) equalClusterNodeType(m1 map[string][]string, m2 map[str
 	if len(m1) == len(m2) {
 		for k, v := range m1 {
 			l1 := len(v)
-			l2 := len(m2[k])
+			v2, exists := m2[k]
+			if !exists {
+				ok = false
+				break
+			}
+			l2 := len(v2)
 			if l1 != l2 {
 				ok = false
 				break
@@ -744,7 +786,8 @@ func (c *ClusterManager) VerifyAllocateSlots(ctx context.Context, clusterName st
 				if i == len(cluster.MasterIDs)-1 && remainder != 0 {
 					expectedSlots = slotsPerMaster + remainder
 				}
-				if cluster.IDToClusterNode[cluster.MasterIDs[i]].SlotsNum != expectedSlots {
+				masterNode := cluster.IDToClusterNode[cluster.MasterIDs[i]]
+				if masterNode == nil || masterNode.SlotsNum != expectedSlots {
 					ok = false
 					break
 				}
