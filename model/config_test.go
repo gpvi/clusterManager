@@ -10,7 +10,7 @@ import (
 func TestConfig(t *testing.T) {
 	cfg, err := InitConfig()
 	if err != nil {
-		t.Errorf("read config error: %v", err)
+		t.Fatalf("read config error: %v", err)
 	}
 	cfg.PrintConfig()
 }

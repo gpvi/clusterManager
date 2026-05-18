@@ -50,9 +50,8 @@ func CreateClusterAction(ctx context.Context, cfg *RuntimeConfig, shardCount int
 		return fmt.Errorf("cluster %s already exists with %d pod(s), please delete it before recreating", clusterName, nodeManager.CountByCluster(clusterName))
 	}
 
-	created := false
 	defer func() {
-		if err == nil || !created {
+		if err == nil {
 			return
 		}
 		if cleanupErr := nodeManager.DeleteResources(ctx, clusterName); cleanupErr != nil {
@@ -66,7 +65,6 @@ func CreateClusterAction(ctx context.Context, cfg *RuntimeConfig, shardCount int
 	if err != nil {
 		return fmt.Errorf("create clusterNodes fail: %v", err)
 	}
-	created = true
 
 	err = clusterManager.SetAllNodeRole(ctx, clusterName)
 	if err != nil {
@@ -78,7 +76,7 @@ func CreateClusterAction(ctx context.Context, cfg *RuntimeConfig, shardCount int
 		return fmt.Errorf("allocate slots fail:%v", err)
 	}
 
-	println("Create succeed!")
+	fmt.Println("Create succeed!")
 
 	clusterStateDir := cfg.ClusterStateDir(clusterName)
 	containerInfoPath := cfg.ClusterContainerInfoPath(clusterName)

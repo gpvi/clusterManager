@@ -81,11 +81,14 @@ func (c *ClusterManager) CreateCluster(shardCount int, ctx context.Context, clus
 		fmt.Println("No pods available.")
 	}
 	fmt.Println("start Meet...")
+	if cliRedis == nil {
+		return fmt.Errorf("no cluster node found for meeting")
+	}
 	err = c.MeetNodes(cliRedis, ctx, clusterName)
 	if err != nil {
 		return fmt.Errorf("meet nodes fail %v", err)
 	}
-	err = c.UpdateAfterMeet(ctx, c.nodeManager.Nodes[0], clusterName)
+	err = c.UpdateAfterMeet(ctx, c.nodeManager.Nodes[meetNodeIndex], clusterName)
 	if err != nil {
 		return err
 	}
@@ -166,7 +169,7 @@ func (c *ClusterManager) AddShards(ctx context.Context, shardCount int, clusterN
 	}
 	_, err = c.verifyNodeTypeSet(ctx, masterToSlave, clusterName)
 	if err != nil {
-		return fmt.Errorf("同步失败")
+		return fmt.Errorf("sync failed")
 	}
 	return err
 }
@@ -228,7 +231,7 @@ func (c *ClusterManager) UpdateAfterSetNodeRole(ctx context.Context, LoginNode *
 		} else if node.NodeType == "slave" {
 			slaves = append(slaves, &node)
 		} else {
-			return fmt.Errorf("nodetype erroe")
+			return fmt.Errorf("node type error")
 		}
 	}
 
@@ -295,9 +298,8 @@ func (c *ClusterManager) MeetNodes(client *redis.Client, ctx context.Context, cl
 	Clients := make([]*redis.Client, 0)
 	defer func() {
 		for _, cli := range Clients {
-			err := cli.Close()
-			if err != nil {
-				return
+			if err := cli.Close(); err != nil {
+				log.Printf("Error closing Redis client in MeetNodes: %v", err)
 			}
 		}
 	}()
@@ -358,7 +360,7 @@ func (c *ClusterManager) SetAllNodeRole(ctx context.Context, clusterName string)
 	}
 	_, err = c.verifyNodeTypeSet(ctx, masterToSlave, clusterName)
 	if err != nil {
-		return fmt.Errorf("同步失败")
+		return fmt.Errorf("sync failed")
 	}
 	return err
 }
@@ -381,6 +383,9 @@ func (c *ClusterManager) SetNodeAsSlave(ctx context.Context, masterIP string, sl
 		return fmt.Errorf("failed to set node %s as replica of master %s: %v", slaveAddrPort, masterIP, err)
 	}
 	fmt.Printf("Node %s set as replica of master %s\n", slaveAddrPort, masterIP)
+	if len(c.nodeManager.Nodes) == 0 {
+		return fmt.Errorf("no nodes available")
+	}
 	err = c.UpdateAfterSetNodeRole(ctx, c.nodeManager.Nodes[0], clusterName)
 	if err != nil {
 		return fmt.Errorf("failed to get cluster nodes info: %v", err)
@@ -388,41 +393,19 @@ func (c *ClusterManager) SetNodeAsSlave(ctx context.Context, masterIP string, sl
 	return nil
 }
 
-func (c *ClusterManager) AddClusterNode(ctx context.Context, clusterName string) (*RuntimeNode, error) {
-	var err error
-	if err := c.nodeManager.CreatePods(ctx, 1, clusterName); err != nil {
-		return &RuntimeNode{}, err
-	}
-
-	cliRedis, err := c.nodeManager.Nodes[0].CreateRedisClient()
-	if err != nil {
-		return &RuntimeNode{}, fmt.Errorf("create redis client fail")
-	}
-	defer func() {
-		err = cliRedis.Close()
-		if err != nil {
-			log.Printf("Redsi %v", err)
-		}
-	}()
-	err = c.MeetNodes(cliRedis, ctx, clusterName)
-	if err != nil {
-		return &RuntimeNode{}, err
-	}
-
-	newNode := c.nodeManager.Nodes[len(c.nodeManager.Nodes)-1]
-	return newNode, nil
-}
-
 func (c *ClusterManager) AllocateSlots(ctx context.Context, clusterName string) error {
 	var err error
+	if len(c.nodeManager.Nodes) == 0 {
+		return fmt.Errorf("no nodes available")
+	}
 	err = c.UpdateSlots(ctx, c.nodeManager.Nodes[0], clusterName)
 	if err != nil {
 		return err
 	}
-	println("start allocate...")
+	fmt.Println("start allocate...")
 	numMasters := len(c.MasterIDs)
 	if numMasters == 0 {
-		println("no current master node to be allocate slots。")
+		fmt.Println("no current master node to allocate slots")
 		return fmt.Errorf("no available master nodes for slot allocation")
 	}
 	slotsPerMaster := TotalSlots / numMasters
@@ -439,16 +422,17 @@ func (c *ClusterManager) AllocateSlots(ctx context.Context, clusterName string) 
 		if err != nil {
 			return fmt.Errorf("failed to create Redis client: %w", err)
 		}
-		defer cliClusterMaster.Close()
 		var slots = make([]int, 0)
 		for j := startPoint; j <= endPoint; j++ {
 			slots = append(slots, j)
 		}
-		if err := cliClusterMaster.ClusterAddSlots(ctx, slots...).Err(); err != nil {
-			return fmt.Errorf("failed to add slots to master %s: %w", masterId, err)
+		addErr := cliClusterMaster.ClusterAddSlots(ctx, slots...).Err()
+		cliClusterMaster.Close()
+		if addErr != nil {
+			return fmt.Errorf("failed to add slots to master %s: %w", masterId, addErr)
 		}
 	}
-	err = c.VerifyAllocateSlots(ctx, c.nodeManager, clusterName)
+	err = c.VerifyAllocateSlots(ctx, clusterName)
 	if err != nil {
 		return fmt.Errorf("failed to verify slot allocation: %v", err)
 	}
@@ -456,6 +440,9 @@ func (c *ClusterManager) AllocateSlots(ctx context.Context, clusterName string) 
 }
 
 func (c *ClusterManager) PrintClusterNodesInfo(ctx context.Context) error {
+	if len(c.nodeManager.Nodes) == 0 {
+		return fmt.Errorf("no nodes available")
+	}
 	time.Sleep(time.Duration(len(c.ClusterNodeList)/3) * time.Second)
 	client, err := CreateRedisClient(ctx, c.nodeManager.Nodes[0].HostIP, c.nodeManager.Nodes[0].HostPort)
 	if err != nil {
@@ -466,7 +453,7 @@ func (c *ClusterManager) PrintClusterNodesInfo(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to get cluster nodes info: %w", err)
 	}
-	println("\ncluster nodes lines:")
+	fmt.Println("\ncluster nodes lines:")
 	lines := strings.Split(nodesInfo, "\n")
 	for _, line := range lines {
 		if line == "" {
@@ -738,9 +725,9 @@ func (c *ClusterManager) waitForMeetSync(client *redis.Client, ctx context.Conte
 	return fmt.Errorf("cluster did not synchronize within the expected time")
 }
 
-func (c *ClusterManager) VerifyAllocateSlots(ctx context.Context, nodeManager *K8sNodeManager, clusterName string) error {
+func (c *ClusterManager) VerifyAllocateSlots(ctx context.Context, clusterName string) error {
 	var err error
-	for _, container := range nodeManager.Nodes {
+	for _, container := range c.nodeManager.Nodes {
 		cluster := c
 		tryTimes := 10
 		for j := 0; j < tryTimes; j++ {
@@ -806,7 +793,9 @@ func (c *ClusterManager) ParseRedisClusterNodes(ctx context.Context, data string
 			} else {
 				defer client.Close()
 				for _, id := range failedIDs {
-					client.ClusterForget(ctx, id)
+					if _, ferr := client.ClusterForget(ctx, id).Result(); ferr != nil {
+				log.Printf("ClusterForget failed: %v", ferr)
+			}
 				}
 			}
 		}

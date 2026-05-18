@@ -23,8 +23,8 @@ func ScaleClusterAction(ctx context.Context, cfg *RuntimeConfig, additionalShard
 	}
 	nodesPerShard := configFromFile.EffectiveNodesPerShard()
 	cfg.RedisContainerPort = configFromFile.Port
-	println("nodesPerShard:")
-	println(nodesPerShard)
+	fmt.Println("nodesPerShard:")
+	fmt.Println(nodesPerShard)
 
 	nodeManager := NewK8sNodeManager(clientset, cfg.KubeNamespace, cfg)
 	clusterManager := NewClusterManager(nodesPerShard, nodeManager)

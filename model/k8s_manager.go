@@ -39,7 +39,8 @@ func (node *RuntimeNode) CreateRedisClient() (*redis.Client, error) {
 
 	_, err := cli.Ping(ctx).Result()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Redis client for node %s: %v", node.ID, err)
+		cli.Close()
+		return nil, fmt.Errorf("failed to create Redis client for node %s: %w", node.ID, err)
 	}
 	fmt.Printf("Redis client successfully connected to node %s at %s\n", node.ID, addr)
 	return cli, nil
@@ -392,14 +393,16 @@ func (c *K8sNodeManager) ListPodsByCluster(ctx context.Context, clusterName stri
 }
 
 func (c *K8sNodeManager) LoadClusterPods(ctx context.Context) error {
-	if podList, err := c.clientset.CoreV1().Pods(c.namespace).List(ctx, metav1.ListOptions{
+	podList, err := c.clientset.CoreV1().Pods(c.namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: "managed-by=clusterManager",
-	}); err == nil {
-		for _, pod := range podList.Items {
-			c.PodSet[pod.Name] = true
-		}
-		c.Num = len(podList.Items)
+	})
+	if err != nil {
+		return fmt.Errorf("failed to list pods: %w", err)
 	}
+	for _, pod := range podList.Items {
+		c.PodSet[pod.Name] = true
+	}
+	c.Num = len(podList.Items)
 	return nil
 }
 
