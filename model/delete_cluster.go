@@ -39,6 +39,15 @@ func DeleteAllContainers(ctx context.Context, cfg *RuntimeConfig, clusterName st
 		return fmt.Errorf("delete resources fail: %v", err)
 	}
 
+	// Remove from SQLite if configured.
+	if cfg.DBPath != "" {
+		if store, serr := OpenStore(cfg.DBPath); serr == nil {
+			defer store.Close()
+			store.DeleteCluster(clusterName)
+			store.LogOperation(clusterName, "delete", "removed all containers", true)
+		}
+	}
+
 	clusterStateDir := cfg.ClusterStateDir(clusterName)
 	if entries, readErr := os.ReadDir(clusterStateDir); readErr == nil && len(entries) == 0 {
 		if err := os.Remove(clusterStateDir); err != nil {

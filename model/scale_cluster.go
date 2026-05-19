@@ -3,6 +3,8 @@ package model
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"redisClusterManager/utils"
 )
@@ -72,5 +74,36 @@ func ScaleClusterAction(ctx context.Context, cfg *RuntimeConfig, additionalShard
 	if err != nil {
 		return err
 	}
+
+	// Persist updated state to SQLite.
+	if cfg.DBPath != "" {
+		if store, serr := OpenStore(cfg.DBPath); serr == nil {
+			defer store.Close()
+			totalShards := len(clusterManager.MasterIDs)
+			store.UpsertCluster(ClusterRecord{
+				Name:          clusterName,
+				Backend:       cfg.Backend,
+				Shards:        totalShards,
+				NodesPerShard: nodesPerShard,
+				RedisPort:     int(cfg.RedisContainerPort),
+				Image:         cfg.ImageName,
+				Status:        "ready",
+			})
+			for _, node := range nodeManager.GetNodes() {
+				if node.ClusterName != clusterName {
+					continue
+				}
+				nodeIdx, _ := strconv.Atoi(strings.TrimPrefix(node.Name, clusterName+"-redis-"))
+				store.UpsertContainer(ContainerRecord{
+					ClusterName: clusterName, Name: node.Name, ContainerID: node.ID,
+					HostIP: node.HostIP, HostPort: int(node.HostPort),
+					ContainerIP: node.ConIp, ContainerPort: int(node.ConPort),
+					NodeIndex: nodeIdx, Status: "running",
+				})
+			}
+			store.LogOperation(clusterName, "scale", fmt.Sprintf("added %d shard(s), total=%d", additionalShards, totalShards), true)
+		}
+	}
+
 	return nil
 }

@@ -16,16 +16,33 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
+// NodeAddress holds both the cluster-internal address (reachable by other Redis nodes)
+// and the client address (reachable by the management tool, typically via localhost port mapping).
+type NodeAddress struct {
+	ClusterAddr string // "10.88.0.9:6379" — for CLUSTER MEET / bus communication
+	ClientAddr  string // "127.0.0.1:40765" — for CreateRedisClient / management commands
+}
+
 type RuntimeNode struct {
+		HostIP      string
+		HostPort    uint16
+		ConIp       string
+		ConPort     uint16
 	Name        string
-	HostIP      string
-	HostPort    uint16
-	ConIp       string
-	ConPort     uint16
+	Address     NodeAddress
 	ID          string
 	ClusterName string
 }
 
+	// ClientConnAddr returns the address for management client connections.
+	func (node *RuntimeNode) ClientConnAddr() string {
+		if node.Address.ClientAddr != "" {
+			return node.Address.ClientAddr
+		}
+		return fmt.Sprintf("%s:%d", node.HostIP, node.HostPort)
+	}
+
+// ContainerInfo is the JSON-serializable view of a RuntimeNode for persistence.
 type ContainerInfo struct {
 	HostIP      string `json:"host_ip"`
 	HostPort    uint16 `json:"host_port"`
@@ -37,7 +54,7 @@ type ContainerInfo struct {
 }
 
 func (node *RuntimeNode) CreateRedisClient() (*redis.Client, error) {
-	addr := fmt.Sprintf("%s:%d", node.HostIP, node.HostPort)
+	addr := node.ClientConnAddr()
 	cli := redis.NewClient(&redis.Options{
 		Addr:     addr,
 		Password: "",
@@ -83,6 +100,12 @@ func (c *K8sNodeManager) AddRuntimeNode(node *RuntimeNode) {
 	c.IDToNode[node.ID] = node
 	c.Nodes = append(c.Nodes, node)
 	c.Num = len(c.Nodes)
+	if node.Address.ClientAddr == "" {
+		node.Address = NodeAddress{
+			ClusterAddr: fmt.Sprintf("%s:%d", node.ConIp, node.ConPort),
+			ClientAddr:  fmt.Sprintf("%s:%d", node.HostIP, node.HostPort),
+		}
+	}
 }
 
 func (c *K8sNodeManager) HasCluster(clusterName string) bool {
@@ -484,9 +507,7 @@ func saveNodesToJSON(filename string, nodes []*RuntimeNode) error {
 	return nil
 }
 
-func CreateRedisClient(ctx context.Context, ip string, port uint16) (*redis.Client, error) {
-	addr := fmt.Sprintf("%s:%d", ip, port)
-
+func CreateRedisClient(ctx context.Context, addr string) (*redis.Client, error) {
 	client := redis.NewClient(&redis.Options{
 		Addr: addr,
 	})

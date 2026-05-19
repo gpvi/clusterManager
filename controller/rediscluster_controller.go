@@ -232,7 +232,7 @@ func (c *RedisClusterController) handleInitial(ctx context.Context, cr *v1.Redis
 	log.Printf("reconciling %s/%s: initial state -> Creating", cr.Namespace, cr.Name)
 
 	runtimeCfg := c.buildRuntimeConfig(cr)
-	nodeManager := model.NewK8sNodeManager(c.clientset, c.namespace, runtimeCfg)
+	nodeManager, err := model.NewNodeManager(runtimeCfg); if err != nil { return fmt.Errorf("create node manager: %w", err) }
 
 	totalNodes := cr.Spec.Shards * cr.Spec.NodesPerShard
 	if err := nodeManager.CreatePods(ctx, totalNodes, cr.Name); err != nil {
@@ -257,7 +257,7 @@ func (c *RedisClusterController) handleCreating(ctx context.Context, cr *v1.Redi
 	log.Printf("reconciling %s/%s: Creating -> Ready", cr.Namespace, cr.Name)
 
 	runtimeCfg := c.buildRuntimeConfig(cr)
-	nodeManager := model.NewK8sNodeManager(c.clientset, c.namespace, runtimeCfg)
+	nodeManager, err := model.NewNodeManager(runtimeCfg); if err != nil { return fmt.Errorf("create node manager: %w", err) }
 
 	// 1. List existing pods for this cluster.
 	if err := nodeManager.ListPodsByCluster(ctx, cr.Name); err != nil {
@@ -272,7 +272,7 @@ func (c *RedisClusterController) handleCreating(ctx context.Context, cr *v1.Redi
 
 	// 2. Find the first ready node (login node) to run Redis commands against.
 	var loginNode *model.RuntimeNode
-	for _, node := range nodeManager.Nodes {
+	for _, node := range nodeManager.GetNodes() {
 		if node.ClusterName == cr.Name {
 			loginNode = node
 			break
@@ -345,7 +345,7 @@ func (c *RedisClusterController) handleCreating(ctx context.Context, cr *v1.Redi
 // are detected.
 func (c *RedisClusterController) handleReady(ctx context.Context, cr *v1.RedisCluster) error {
 	runtimeCfg := c.buildRuntimeConfig(cr)
-	nodeManager := model.NewK8sNodeManager(c.clientset, c.namespace, runtimeCfg)
+	nodeManager, err := model.NewNodeManager(runtimeCfg); if err != nil { return fmt.Errorf("create node manager: %w", err) }
 
 	// 1. List pods to verify expected count.
 	if err := nodeManager.ListPodsByCluster(ctx, cr.Name); err != nil {
@@ -364,7 +364,7 @@ func (c *RedisClusterController) handleReady(ctx context.Context, cr *v1.RedisCl
 
 	// 2. Find a login node to inspect the Redis cluster.
 	var loginNode *model.RuntimeNode
-	for _, node := range nodeManager.Nodes {
+	for _, node := range nodeManager.GetNodes() {
 		if node.ClusterName == cr.Name {
 			loginNode = node
 			break
@@ -443,7 +443,7 @@ func (c *RedisClusterController) handleDegraded(ctx context.Context, cr *v1.Redi
 	log.Printf("reconciling %s/%s: Degraded -> attempting repair", cr.Namespace, cr.Name)
 
 	runtimeCfg := c.buildRuntimeConfig(cr)
-	nodeManager := model.NewK8sNodeManager(c.clientset, c.namespace, runtimeCfg)
+	nodeManager, err := model.NewNodeManager(runtimeCfg); if err != nil { return fmt.Errorf("create node manager: %w", err) }
 
 	if err := nodeManager.ListPodsByCluster(ctx, cr.Name); err != nil {
 		return fmt.Errorf("repair: failed to list pods: %w", err)
@@ -456,7 +456,7 @@ func (c *RedisClusterController) handleDegraded(ctx context.Context, cr *v1.Redi
 	}
 
 	var loginNode *model.RuntimeNode
-	for _, node := range nodeManager.Nodes {
+	for _, node := range nodeManager.GetNodes() {
 		if node.ClusterName == cr.Name {
 			loginNode = node
 			break

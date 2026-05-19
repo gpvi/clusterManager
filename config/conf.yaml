@@ -1,4 +1,5 @@
 backend: "k8s"
+db_path: ""
 containerd_socket: ""
 
 paths:

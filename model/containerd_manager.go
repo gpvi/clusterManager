@@ -46,6 +46,12 @@ func (c *ContainerdNodeManager) AddRuntimeNode(node *RuntimeNode) {
 	c.IDToNode[node.ID] = node
 	c.Nodes = append(c.Nodes, node)
 	c.Num = len(c.Nodes)
+	if node.Address.ClientAddr == "" {
+		node.Address = NodeAddress{
+			ClusterAddr: fmt.Sprintf("%s:%d", node.ConIp, node.ConPort),
+			ClientAddr:  fmt.Sprintf("%s:%d", node.HostIP, node.HostPort),
+		}
+	}
 }
 
 func (c *ContainerdNodeManager) HasCluster(clusterName string) bool {

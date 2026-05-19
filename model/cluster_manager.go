@@ -7,6 +7,7 @@ import (
 	"redisClusterManager/utils"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"strconv"
 	"strings"
 	"time"
@@ -419,7 +420,7 @@ func (c *ClusterManager) SetNodeAsSlave(ctx context.Context, masterIP string, sl
 	if slaveNode == nil {
 		return fmt.Errorf("slave node not found for IP %s", slaveAddr)
 	}
-	cli, err := CreateRedisClient(ctx, "127.0.0.1", slaveNode.HostPort)
+	cli, err := CreateRedisClient(ctx, slaveNode.ClientConnAddr())
 	if err != nil {
 		return fmt.Errorf("failed to create Redis client: %w", err)
 	}
@@ -476,8 +477,7 @@ func (c *ClusterManager) AllocateSlots(ctx context.Context, clusterName string) 
 		if port == nil {
 			return fmt.Errorf("runtime node not found for IP %s", masterNode.IP)
 		}
-		port_val := port.HostPort
-		cliClusterMaster, err := CreateRedisClient(ctx, "127.0.0.1", port_val)
+		cliClusterMaster, err := CreateRedisClient(ctx, port.ClientConnAddr())
 		if err != nil {
 			return fmt.Errorf("failed to create Redis client: %w", err)
 		}
@@ -503,7 +503,7 @@ func (c *ClusterManager) PrintClusterNodesInfo(ctx context.Context) error {
 		return fmt.Errorf("no nodes available: %w", ErrNoNodesAvailable)
 	}
 	time.Sleep(time.Duration(len(c.ClusterNodeList)/3) * time.Second)
-	client, err := CreateRedisClient(ctx, c.nodeManager.GetNodes()[0].HostIP, c.nodeManager.GetNodes()[0].HostPort)
+	client, err := CreateRedisClient(ctx, c.nodeManager.GetNodes()[0].ClientConnAddr())
 	if err != nil {
 		return fmt.Errorf("failed to create Redis client: %w", err)
 	}
@@ -530,102 +530,15 @@ func (c *ClusterManager) PrintClusterNodesInfo(ctx context.Context) error {
 	return nil
 }
 
-func (c *ClusterManager) MigrateSlot(ctx context.Context, slot int, sourceNodeID, destNodeID string) error {
-	sourceNode := c.IDToClusterNode[sourceNodeID]
-	destNode := c.IDToClusterNode[destNodeID]
-	if destNode == nil {
-		return fmt.Errorf("dest node not found for ID %s", destNodeID)
-	}
-	destRuntime := c.nodeManager.GetNodeByIP(destNode.IP)
-	if destRuntime == nil {
-		return fmt.Errorf("runtime node not found for dest IP %s", destNode.IP)
-	}
-	desCli, err := CreateRedisClient(ctx, destRuntime.HostIP, destRuntime.HostPort)
-	if err != nil {
-		return fmt.Errorf("failed to create Redis client: %w", err)
-	}
-	defer desCli.Close()
-	if _, exist := c.MasterToSlave[sourceNode.ID]; !exist {
-		return fmt.Errorf("source node %s is not a master node", sourceNodeID)
-	}
-	sourceRuntime := c.nodeManager.GetNodeByIP(sourceNode.IP)
-	if sourceRuntime == nil {
-		return fmt.Errorf("runtime node not found for source IP %s", sourceNode.IP)
-	}
-	sourceCli, err := CreateRedisClient(ctx, sourceRuntime.HostIP, sourceRuntime.HostPort)
-	if err != nil {
-		return fmt.Errorf("failed to create Redis client: %w", err)
-	}
-	defer sourceCli.Close()
-
-	_, err = utils.ExecuteClusterCommand(ctx, desCli, "cluster", "SETSLOT", strconv.Itoa(slot), "IMPORTING", sourceNodeID)
-	if err != nil {
-		return fmt.Errorf("failed to set slot as IMPORTING: %v", err)
-	}
-
-	_, err = utils.ExecuteClusterCommand(ctx, sourceCli, "CLUSTER", "SETSLOT", strconv.Itoa(slot), "MIGRATING", destNodeID)
-	if err != nil {
-		return fmt.Errorf("failed to set slot as MIGRATING: %v", err)
-	}
-
-	cmdstring := sourceCli.ClusterGetKeysInSlot(ctx, slot, 1000)
-	keys := cmdstring.Val()
-	port := fmt.Sprintf("%v", destNode.Port)
-	if len(keys) > 0 {
-		chunkSize := len(keys) / 10
-		if chunkSize == 0 {
-			chunkSize = 1
-		}
-
-		for i := 0; i < len(keys); i += chunkSize {
-			end := i + chunkSize
-			if end > len(keys) {
-				end = len(keys)
-			}
-
-			currentChunk := keys[i:end]
-
-			migrateArgs := []interface{}{destNode.IP, port, "", 0, 5000 * time.Millisecond, "KEYS"}
-
-			for _, key := range currentChunk {
-				exists, err := sourceCli.Exists(ctx, key).Result()
-				if err != nil {
-					log.Printf("Error checking existence of key %s: %v", key, err)
-					continue
-				}
-				if exists == 0 {
-					log.Printf("Key %s does not exist, skipping migration.", key)
-					continue
-				}
-				migrateArgs = append(migrateArgs, key)
-			}
-
-			if len(migrateArgs) > 6 {
-				cmd := sourceCli.Do(ctx, append([]interface{}{"MIGRATE"}, migrateArgs...)...)
-				if err := cmd.Err(); err != nil {
-					log.Printf("Failed to migrate keys in chunk starting at index %d: %v", i, err)
-					continue
-				}
-			} else {
-				log.Printf("No valid keys to migrate in chunk starting at index %d.", i)
-			}
-		}
-	}
-
-	_, err = utils.ExecuteClusterCommand(ctx, desCli, "CLUSTER", "SETSLOT", strconv.Itoa(slot), "NODE", destNodeID)
-	if err != nil {
-		return fmt.Errorf("failed to set slot %d to NODE %s on destination: %v", slot, destNodeID, err)
-	}
-	_, err = utils.ExecuteClusterCommand(ctx, sourceCli, "CLUSTER", "SETSLOT", strconv.Itoa(slot), "NODE", destNodeID)
-	if err != nil {
-		return fmt.Errorf("failed to set slot %d to NODE %s on destination: %v", slot, destNodeID, err)
-	}
-
-	return nil
-}
-
 // concurrency of slot migration workers.
 const migrationWorkers = 16
+
+// Slot migration thresholds.
+const (
+	smallKeyBatch    = 50          // keys: single MIGRATE is faster than chunking
+	chunkDivisor     = 10          // split into this many chunks for large key counts
+	bigKeyThreshold  = 10 * 1024 * 1024 // 10MB: treat as "big key"
+)
 
 type slotTask struct {
 	slot         int
@@ -719,13 +632,36 @@ func (c *ClusterManager) MigratesSlotsToEmptyNode(ctx context.Context, clusterNa
 
 	fmt.Printf("slot migration: %d slots across %d source groups (%d workers each)\n", len(tasks), len(groups), migrationWorkers)
 
+	var completed atomic.Int64
+	totalSlots := int64(len(tasks))
+
+	// Progress reporter goroutine.
+	ctxProgress, cancelProgress := context.WithCancel(ctx)
+	defer cancelProgress()
+	go func() {
+		ticker := time.NewTicker(3 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				done := completed.Load()
+				if done < totalSlots {
+					fmt.Printf("  slot migration: %d/%d (%.1f%%)\n", done, totalSlots, float64(done)/float64(totalSlots)*100)
+				}
+			case <-ctxProgress.Done():
+				return
+			}
+		}
+	}()
+
 	var wg sync.WaitGroup
 	errCh := make(chan error, len(tasks))
 
 	for _, g := range groups {
 		// Shared source client per group.
-		sourceCli, err := CreateRedisClient(ctx, "127.0.0.1", g.fromHostPort)
+		sourceCli, err := CreateRedisClient(ctx, fmt.Sprintf("127.0.0.1:%d", g.fromHostPort))
 		if err != nil {
+			cancelProgress()
 			return fmt.Errorf("connect source %s fail: %w", g.fromIP, err)
 		}
 		defer sourceCli.Close()
@@ -744,12 +680,14 @@ func (c *ClusterManager) MigratesSlotsToEmptyNode(ctx context.Context, clusterNa
 					if err := migrateSlotShared(ctx, sourceCli, t); err != nil {
 						errCh <- fmt.Errorf("slot %d from %s to %s: %w", t.slot, t.fromIP, t.toIP, err)
 					}
+					completed.Add(1)
 				}
 			}()
 		}
 	}
 
 	wg.Wait()
+	cancelProgress()
 	close(errCh)
 
 	// Collect errors (non-fatal).
@@ -757,12 +695,14 @@ func (c *ClusterManager) MigratesSlotsToEmptyNode(ctx context.Context, clusterNa
 		log.Printf("slot migration: %v", err)
 	}
 
+	fmt.Printf("  slot migration: %d/%d (100%%)\n", totalSlots, totalSlots)
 	return c.PrintClusterNodesInfo(ctx)
 }
 
 // migrateSlotShared migrates a single slot using a shared source client.
+// Handles: empty slots (instant), small batches (single MIGRATE), large batches (chunked), and big keys (COPY mode).
 func migrateSlotShared(ctx context.Context, sourceCli *redis.Client, t slotTask) error {
-	destCli, err := CreateRedisClient(ctx, "127.0.0.1", t.destHostPort)
+	destCli, err := CreateRedisClient(ctx, fmt.Sprintf("127.0.0.1:%d", t.destHostPort))
 	if err != nil {
 		return fmt.Errorf("connect dest fail: %w", err)
 	}
@@ -781,17 +721,43 @@ func migrateSlotShared(ctx context.Context, sourceCli *redis.Client, t slotTask)
 
 	// Migrate keys if any.
 	keys := sourceCli.ClusterGetKeysInSlot(ctx, t.slot, 1000).Val()
-	if len(keys) > 0 {
-		port := strconv.Itoa(int(t.containerPort))
-		migrateArgs := []interface{}{t.toIP, port, "", 0, 5000, "KEYS"}
-		for _, key := range keys {
-			migrateArgs = append(migrateArgs, key)
+	if len(keys) == 0 {
+		// Scenario A: empty slot — skip data migration.
+		goto finalize
+	}
+
+	if len(keys) <= smallKeyBatch {
+		// Scenario B: few keys — single MIGRATE is fastest.
+		migrateKeyBatch(ctx, sourceCli, t, keys, 5000)
+	} else {
+		// Scenario C/D: many keys or possible big keys.
+		normal, big, _ := classifyKeys(ctx, sourceCli, keys)
+		// Big keys: migrate individually with COPY mode.
+		for _, entry := range big {
+			if err := migrateBigKey(ctx, sourceCli, t, entry.key, entry.size); err != nil {
+				log.Printf("big key %s (%.1fMB) migration failed: %v", entry.key, float64(entry.size)/1024/1024, err)
+			}
 		}
-		if err := sourceCli.Do(ctx, append([]interface{}{"MIGRATE"}, migrateArgs...)...).Err(); err != nil {
-			log.Printf("MIGRATE slot %d: %v", t.slot, err)
+		// Normal keys: chunked migration.
+		if len(normal) > 0 {
+			chunkSize := len(normal) / chunkDivisor
+			if chunkSize < 10 {
+				chunkSize = 10
+			}
+			for i := 0; i < len(normal); i += chunkSize {
+				end := i + chunkSize
+				if end > len(normal) {
+					end = len(normal)
+				}
+				active := filterExistingKeys(ctx, sourceCli, normal[i:end])
+				if len(active) > 0 {
+					migrateKeyBatch(ctx, sourceCli, t, active, 5000)
+				}
+			}
 		}
 	}
 
+finalize:
 	// SETSLOT NODE on dest
 	_, err = utils.ExecuteClusterCommand(ctx, destCli, "CLUSTER", "SETSLOT", strconv.Itoa(t.slot), "NODE", t.toID)
 	if err != nil {
@@ -805,6 +771,78 @@ func migrateSlotShared(ctx context.Context, sourceCli *redis.Client, t slotTask)
 	return nil
 }
 
+type keyEntry struct {
+	key  string
+	size int64
+}
+
+// classifyKeys separates keys into normal and big based on MEMORY USAGE.
+func classifyKeys(ctx context.Context, cli *redis.Client, keys []string) (normal []string, big []keyEntry, failed []string) {
+	for _, key := range keys {
+		size, err := cli.MemoryUsage(ctx, key, 0).Result()
+		if err != nil {
+			failed = append(failed, key)
+		} else if size >= bigKeyThreshold {
+			big = append(big, keyEntry{key, size})
+		} else {
+			normal = append(normal, key)
+		}
+	}
+	return
+}
+
+// migrateBigKey migrates a single large key using COPY mode for safety.
+func migrateBigKey(ctx context.Context, sourceCli *redis.Client, t slotTask, key string, size int64) error {
+	timeoutSec := size / 1024 / 1024 // 1 second per MB
+	if timeoutSec < 5 {
+		timeoutSec = 5
+	}
+	if timeoutSec > 60 {
+		timeoutSec = 60
+	}
+
+	fmt.Printf("  migrating big key %s (%.1fMB, timeout=%ds)\n", key, float64(size)/1024/1024, timeoutSec)
+
+	// COPY mode: keep source key until we confirm the destination has it.
+	args := []interface{}{t.toIP, t.containerPort, key, 0, timeoutSec * 1000, "COPY", "REPLACE"}
+	if err := sourceCli.Do(ctx, append([]interface{}{"MIGRATE"}, args...)...).Err(); err != nil {
+		// COPY keeps the source key — safe to retry.
+		return fmt.Errorf("MIGRATE big key %s: %w", key, err)
+	}
+	// Key is now on the destination. Safe to delete from source.
+	if err := sourceCli.Del(ctx, key).Err(); err != nil {
+		log.Printf("big key %s copied but source delete failed: %v", key, err)
+	}
+	return nil
+}
+
+// migrateKeyBatch sends a batch of keys via a single MIGRATE command.
+func migrateKeyBatch(ctx context.Context, sourceCli *redis.Client, t slotTask, keys []string, timeoutMs int) {
+	port := strconv.Itoa(int(t.containerPort))
+	args := []interface{}{t.toIP, port, "", 0, timeoutMs, "KEYS"}
+	for _, key := range keys {
+		args = append(args, key)
+	}
+	if err := sourceCli.Do(ctx, append([]interface{}{"MIGRATE"}, args...)...).Err(); err != nil {
+		log.Printf("MIGRATE slot %d (%d keys): %v", t.slot, len(keys), err)
+	}
+}
+
+// filterExistingKeys returns keys that exist on the source node.
+func filterExistingKeys(ctx context.Context, cli *redis.Client, keys []string) []string {
+	var result []string
+	for _, key := range keys {
+		exists, err := cli.Exists(ctx, key).Result()
+		if err != nil {
+			continue
+		}
+		if exists > 0 {
+			result = append(result, key)
+		}
+	}
+	return result
+}
+
 func (c *ClusterManager) sortClusterNodesByIP(nodes []*ClusterNode) {
 	sort.Sort(ByIP(nodes))
 }
@@ -813,7 +851,7 @@ func (c *ClusterManager) GetClusterNodes(ctx context.Context, LoginNode *Runtime
 	if len(c.nodeManager.GetNodes()) == 0 {
 		return nil, fmt.Errorf("no pods found: %w", ErrClusterNotFound)
 	}
-	client, err := CreateRedisClient(ctx, LoginNode.HostIP, LoginNode.HostPort)
+	client, err := CreateRedisClient(ctx, LoginNode.ClientConnAddr())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Redis client: %w", err)
 	}
@@ -985,7 +1023,7 @@ func (c *ClusterManager) ParseRedisClusterNodes(ctx context.Context, data string
 			}
 		}
 		if clusterIndex >= 0 {
-			client, err := CreateRedisClient(ctx, c.nodeManager.GetNodes()[clusterIndex].HostIP, c.nodeManager.GetNodes()[clusterIndex].HostPort)
+			client, err := CreateRedisClient(ctx, c.nodeManager.GetNodes()[clusterIndex].ClientConnAddr())
 			if err != nil {
 				log.Printf("failed to create Redis client for forget: %v", err)
 			} else {
