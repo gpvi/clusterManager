@@ -10,9 +10,9 @@ import (
 func ScaleClusterAction(ctx context.Context, cfg *RuntimeConfig, additionalShards int, clusterName string) error {
 	var err error
 
-	clientset, _, err := NewK8sClientset(cfg.KubeConfigPath)
+	nodeManager, err := NewNodeManager(cfg)
 	if err != nil {
-		return fmt.Errorf("create k8s clientset fail: %v", err)
+		return fmt.Errorf("create node manager fail: %v", err)
 	}
 
 	runtimeConfigPath := cfg.ClusterRuntimeConfigPath(clusterName)
@@ -26,7 +26,6 @@ func ScaleClusterAction(ctx context.Context, cfg *RuntimeConfig, additionalShard
 	fmt.Println("nodesPerShard:")
 	fmt.Println(nodesPerShard)
 
-	nodeManager := NewK8sNodeManager(clientset, cfg.KubeNamespace, cfg)
 	clusterManager := NewClusterManager(nodesPerShard, nodeManager)
 
 	err = nodeManager.ListPodsByCluster(ctx, clusterName)
@@ -34,28 +33,29 @@ func ScaleClusterAction(ctx context.Context, cfg *RuntimeConfig, additionalShard
 		return err
 	}
 
-	if nodeManager.Num == 0 {
+	if nodeManager.GetNodeCount() == 0 {
 		return fmt.Errorf("current pods num is 0, please create cluster first: %w", ErrClusterNotFound)
 	}
 
+	nodes := nodeManager.GetNodes()
 	ClusterNodeIndex := 0
-	for ; ClusterNodeIndex < nodeManager.Num; ClusterNodeIndex++ {
-		if nodeManager.Nodes[ClusterNodeIndex].ClusterName == clusterName {
+	for ; ClusterNodeIndex < nodeManager.GetNodeCount(); ClusterNodeIndex++ {
+		if nodes[ClusterNodeIndex].ClusterName == clusterName {
 			break
 		}
 	}
-	if ClusterNodeIndex >= nodeManager.Num {
+	if ClusterNodeIndex >= nodeManager.GetNodeCount() {
 		return fmt.Errorf("cluster with name %s not found: %w", clusterName, ErrClusterNotFound)
 	}
-	err = clusterManager.UpdateAfterMeet(ctx, nodeManager.Nodes[ClusterNodeIndex], clusterName)
+	err = clusterManager.UpdateAfterMeet(ctx, nodes[ClusterNodeIndex], clusterName)
 	if err != nil {
 		return fmt.Errorf("init meet Info fail when add shards %v", err)
 	}
-	err = clusterManager.UpdateAfterSetNodeRole(ctx, nodeManager.Nodes[ClusterNodeIndex], clusterName)
+	err = clusterManager.UpdateAfterSetNodeRole(ctx, nodes[ClusterNodeIndex], clusterName)
 	if err != nil {
 		return fmt.Errorf("init set node role info fail when add shard %v", err)
 	}
-	err = clusterManager.UpdateSlots(ctx, nodeManager.Nodes[ClusterNodeIndex], clusterName)
+	err = clusterManager.UpdateSlots(ctx, nodes[ClusterNodeIndex], clusterName)
 	if err != nil {
 		return fmt.Errorf("init slots info fail when add shard%v", err)
 	}

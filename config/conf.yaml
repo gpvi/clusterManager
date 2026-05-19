@@ -1,3 +1,6 @@
+backend: "k8s"
+containerd_socket: ""
+
 paths:
   redis_host_config_path: "setup/redis/config"
   redis_config_path: "/data/redis/config"

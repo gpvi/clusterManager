@@ -7,3 +7,7 @@ cluster-linux
 .testhome/
 .xdg/
 runtime/
+*.db
+*.exe
+cluster-*
+vendor/

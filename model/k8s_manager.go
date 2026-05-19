@@ -26,6 +26,16 @@ type RuntimeNode struct {
 	ClusterName string
 }
 
+type ContainerInfo struct {
+	HostIP      string `json:"host_ip"`
+	HostPort    uint16 `json:"host_port"`
+	ConIp       string `json:"con_ip"`
+	ConPort     uint16 `json:"con_port"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	ClusterName string `json:"cluster_name"`
+}
+
 func (node *RuntimeNode) CreateRedisClient() (*redis.Client, error) {
 	addr := fmt.Sprintf("%s:%d", node.HostIP, node.HostPort)
 	cli := redis.NewClient(&redis.Options{
@@ -54,7 +64,6 @@ type K8sNodeManager struct {
 	Num       int
 	IDToNode  map[string]*RuntimeNode
 	Nodes     []*RuntimeNode
-	PodSet    map[string]bool
 }
 
 func NewK8sNodeManager(clientset kubernetes.Interface, namespace string, config *RuntimeConfig) *K8sNodeManager {
@@ -66,7 +75,6 @@ func NewK8sNodeManager(clientset kubernetes.Interface, namespace string, config 
 		IDToNode:  make(map[string]*RuntimeNode),
 		Nodes:     make([]*RuntimeNode, 0, 10),
 		Num:       0,
-		PodSet:    make(map[string]bool),
 	}
 }
 
@@ -85,6 +93,10 @@ func (c *K8sNodeManager) HasCluster(clusterName string) bool {
 	}
 	return false
 }
+
+func (c *K8sNodeManager) GetNodes() []*RuntimeNode  { return c.Nodes }
+func (c *K8sNodeManager) GetNodeByIP(ip string) *RuntimeNode { return c.IPToNode[ip] }
+func (c *K8sNodeManager) GetNodeCount() int         { return c.Num }
 
 func (c *K8sNodeManager) CountByCluster(clusterName string) int {
 	count := 0
@@ -194,7 +206,6 @@ func (c *K8sNodeManager) CreatePods(ctx context.Context, nodeNum int, clusterNam
 		if r.err != nil {
 			return r.err
 		}
-		c.PodSet[r.name] = true
 		podNames = append(podNames, r.name)
 		fmt.Printf("Pod created: %s\n", r.name)
 	}
@@ -384,7 +395,6 @@ func (c *K8sNodeManager) ListPodsByCluster(ctx context.Context, clusterName stri
 		c.Nodes = append(c.Nodes, &node)
 		c.IDToNode[node.ID] = &node
 		c.IPToNode[node.ConIp] = &node
-		c.PodSet[pod.Name] = true
 		c.Num++
 	}
 	return nil
@@ -441,21 +451,13 @@ func (c *K8sNodeManager) DeleteResources(ctx context.Context, clusterName string
 
 	return nil
 }
-
 func (c *K8sNodeManager) SaveToJSON(filename string) error {
-	type ContainerInfo struct {
-		HostIP      string `json:"host_ip"`
-		HostPort    uint16 `json:"host_port"`
-		ConIp       string `json:"con_ip"`
-		ConPort     uint16 `json:"con_port"`
-		ID          string `json:"id"`
-		Name        string `json:"name"`
-		ClusterName string `json:"cluster_name"`
-	}
-
+	return saveNodesToJSON(filename, c.Nodes)
+}
+func saveNodesToJSON(filename string, nodes []*RuntimeNode) error {
 	var containerInfos []ContainerInfo
 
-	for _, node := range c.Nodes {
+	for _, node := range nodes {
 		containerInfos = append(containerInfos, ContainerInfo{
 			HostIP:      node.HostIP,
 			HostPort:    node.HostPort,
@@ -476,8 +478,7 @@ func (c *K8sNodeManager) SaveToJSON(filename string) error {
 		return fmt.Errorf("error creating state dir: %w", err)
 	}
 
-	err = os.WriteFile(filename, data, 0644)
-	if err != nil {
+	if err := os.WriteFile(filename, data, 0644); err != nil {
 		return fmt.Errorf("error writing to file: %w", err)
 	}
 	return nil

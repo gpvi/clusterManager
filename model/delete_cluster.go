@@ -11,12 +11,10 @@ import (
 func DeleteAllContainers(ctx context.Context, cfg *RuntimeConfig, clusterName string) error {
 	var err error
 
-	clientset, _, err := NewK8sClientset(cfg.KubeConfigPath)
+	nodeManager, err := NewNodeManager(cfg)
 	if err != nil {
-		return fmt.Errorf("create k8s clientset fail: %v", err)
+		return fmt.Errorf("create node manager fail: %v", err)
 	}
-
-	nodeManager := NewK8sNodeManager(clientset, cfg.KubeNamespace, cfg)
 
 	runtimeConfigPath := cfg.ClusterRuntimeConfigPath(clusterName)
 	if utils.FileExists(runtimeConfigPath) {

@@ -67,9 +67,6 @@ func TestK8sNodeManager_Init(t *testing.T) {
 	if nm.Nodes == nil {
 		t.Error("Nodes should be initialized")
 	}
-	if nm.PodSet == nil {
-		t.Error("PodSet should be initialized")
-	}
 }
 
 // TestK8sNodeManager_AddAndQuery verifies AddRuntimeNode and query methods.

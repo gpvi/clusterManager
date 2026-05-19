@@ -21,6 +21,9 @@ type RuntimeConfig struct {
 	RuntimeStateDir     string
 	ContainerInfoFile   string
 	ConfigSaveFileName  string
+	Backend             string
+	DBPath              string
+	ContainerdSocket    string
 	KubeConfigPath      string
 	KubeNamespace       string
 	BaseNodePort        int
@@ -29,7 +32,10 @@ type RuntimeConfig struct {
 }
 
 type Config struct {
-	Paths struct {
+	Backend          string `yaml:"backend"`
+	DBPath           string `yaml:"db_path"`
+	ContainerdSocket string `yaml:"containerd_socket"`
+	Paths            struct {
 		RedisHostConfigPath string `yaml:"redis_host_config_path"`
 		RedisConfigPath     string `yaml:"redis_config_path"`
 		RedisHostDataPath   string `yaml:"redis_host_data_path"`
@@ -110,6 +116,21 @@ func (c *Config) ReadConfig() (*RuntimeConfig, error) {
 		cfg.RedisContainerPort = c.Configs.RedisPort
 	}
 
+	cfg.Backend = c.Backend
+	if cfg.Backend == "" {
+		cfg.Backend = "k8s"
+	}
+
+	cfg.ContainerdSocket = c.ContainerdSocket
+	if cfg.ContainerdSocket == "" {
+		cfg.ContainerdSocket = defaultContainerdSocket()
+	}
+
+	cfg.DBPath = c.DBPath
+	if cfg.DBPath == "" {
+		cfg.DBPath = filepath.Join(cfg.RuntimeStateDir, "cluster.db")
+	}
+
 	cfg.KubeConfigPath = c.Kubernetes.KubeConfigPath
 	if cfg.KubeConfigPath == "" {
 		cfg.KubeConfigPath = defaultKubeConfig()
@@ -169,6 +190,15 @@ func (c *Config) loadFromEnv() {
 			c.Configs.RedisPort = uint16(port)
 		}
 	}
+	if v := os.Getenv("CLUSTER_BACKEND"); v != "" {
+		c.Backend = v
+	}
+	if v := os.Getenv("CLUSTER_CONTAINERD_SOCKET"); v != "" {
+		c.ContainerdSocket = v
+	}
+	if v := os.Getenv("CLUSTER_DB_PATH"); v != "" {
+		c.DBPath = v
+	}
 }
 
 func (c *Config) resolvePaths(root string) {
@@ -191,6 +221,7 @@ func (cfg *RuntimeConfig) ClusterContainerInfoPath(clusterName string) string {
 
 func (cfg *RuntimeConfig) PrintConfig() {
 	fmt.Printf("ProjectRoot: %s\n", cfg.ProjectRoot)
+	fmt.Printf("Backend: %s\n", cfg.Backend)
 	fmt.Printf("RedisHostConfigPath: %s\n", cfg.RedisHostConfigPath)
 	fmt.Printf("RedisConfigPath: %s\n", cfg.RedisConfigPath)
 	fmt.Printf("RedisHostDataPath: %s\n", cfg.RedisHostDataPath)
@@ -198,6 +229,7 @@ func (cfg *RuntimeConfig) PrintConfig() {
 	fmt.Printf("RuntimeStateDir: %s\n", cfg.RuntimeStateDir)
 	fmt.Printf("ConfigSaveFileName: %s\n", cfg.ConfigSaveFileName)
 	fmt.Printf("ContainerInfoFile: %s\n", cfg.ContainerInfoFile)
+	fmt.Printf("ContainerdSocket: %s\n", cfg.ContainerdSocket)
 	fmt.Printf("KubeConfigPath: %s\n", cfg.KubeConfigPath)
 	fmt.Printf("KubeNamespace: %s\n", cfg.KubeNamespace)
 	fmt.Printf("BaseNodePort: %d\n", cfg.BaseNodePort)
@@ -239,6 +271,13 @@ func defaultKubeConfig() string {
 		return ""
 	}
 	return filepath.Join(home, ".kube", "config")
+}
+
+func defaultContainerdSocket() string {
+	if runtime.GOOS == "windows" {
+		return `\\.\pipe\containerd-containerd`
+	}
+	return "/run/containerd/containerd.sock"
 }
 
 func NewConfig() *Config {

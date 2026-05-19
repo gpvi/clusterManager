@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
 	"redisClusterManager/utils"
 )
@@ -24,12 +26,10 @@ func (c RedisClusterConfig) EffectiveNodesPerShard() int {
 func CreateClusterAction(ctx context.Context, cfg *RuntimeConfig, shardCount int, nodesPerShard int, clusterName string) error {
 	var err error
 
-	clientset, _, err := NewK8sClientset(cfg.KubeConfigPath)
+	nodeManager, err := NewNodeManager(cfg)
 	if err != nil {
-		return fmt.Errorf("create k8s clientset fail: %v", err)
+		return fmt.Errorf("create node manager fail: %v", err)
 	}
-
-	nodeManager := NewK8sNodeManager(clientset, cfg.KubeNamespace, cfg)
 	clusterManager := NewClusterManager(nodesPerShard, nodeManager)
 
 	if shardCount <= 0 {
@@ -101,6 +101,32 @@ func CreateClusterAction(ctx context.Context, cfg *RuntimeConfig, shardCount int
 	err = clusterManager.PrintClusterNodesInfo(ctx)
 	if err != nil {
 		return fmt.Errorf("print cluster nodes Info error :%v", err)
+	}
+
+	// Persist to SQLite if configured.
+	if cfg.DBPath != "" {
+		store, serr := OpenStore(cfg.DBPath)
+		if serr == nil {
+			defer store.Close()
+			store.UpsertCluster(ClusterRecord{
+				Name: clusterName, Backend: cfg.Backend, Shards: shardCount,
+				NodesPerShard: nodesPerShard, RedisPort: int(cfg.RedisContainerPort),
+				Image: cfg.ImageName, Status: "ready",
+			})
+			for _, node := range nodeManager.GetNodes() {
+				if node.ClusterName != clusterName {
+					continue
+				}
+				nodeIdx, _ := strconv.Atoi(strings.TrimPrefix(node.Name, clusterName+"-redis-"))
+				store.UpsertContainer(ContainerRecord{
+					ClusterName: clusterName, Name: node.Name, ContainerID: node.ID,
+					HostIP: node.HostIP, HostPort: int(node.HostPort),
+					ContainerIP: node.ConIp, ContainerPort: int(node.ConPort),
+					NodeIndex: nodeIdx, Status: "running",
+				})
+			}
+			store.LogOperation(clusterName, "create", fmt.Sprintf("shards=%d nodes_per_shard=%d", shardCount, nodesPerShard), true)
+		}
 	}
 
 	return nil

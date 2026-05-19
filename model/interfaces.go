@@ -8,7 +8,13 @@ type PodManager interface {
 	ListPodsByCluster(ctx context.Context, clusterName string) error
 	DeleteResources(ctx context.Context, clusterName string) error
 	HasCluster(clusterName string) bool
+	CountByCluster(clusterName string) int
+	GetNodes() []*RuntimeNode
+	GetNodeByIP(ip string) *RuntimeNode
+	GetNodeCount() int
+	SaveToJSON(filename string) error
 }
 
-// Compile-time check that K8sNodeManager satisfies PodManager.
+// Compile-time checks that default node managers satisfy PodManager.
 var _ PodManager = (*K8sNodeManager)(nil)
+var _ PodManager = (*PodmanNodeManager)(nil)
