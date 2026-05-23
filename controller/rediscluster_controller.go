@@ -54,7 +54,7 @@ func NewController(clientset kubernetes.Interface, restConfig *rest.Config, name
 			KubeNamespace:       namespace,
 			ImageName:           "redis:7-alpine",
 			RedisContainerPort:  6379,
-			RedisHostConfigPath: "setup/redis/config",
+			RedisHostConfigPath: "configs",
 		}
 	}
 

@@ -3,9 +3,9 @@ db_path: ""
 containerd_socket: ""
 
 paths:
-  redis_host_config_path: "setup/redis/config"
+  redis_host_config_path: "configs"
   redis_config_path: "/data/redis/config"
-  redis_host_data_path: "setup/redis/data"
+  redis_host_data_path: "configs"
   redis_config_data_path: "/data/redis/data"
   runtime_state_dir: "runtime"
 

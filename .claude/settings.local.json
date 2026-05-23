@@ -76,7 +76,10 @@
       "Bash(git push *)",
       "Bash(git config *)",
       "Bash(git branch *)",
-      "Bash(git remote *)"
+      "Bash(git remote *)",
+      "Bash(grep -E \"\\\\.DS_Store|^cluster$|cluster$\")",
+      "Bash(git rm *)",
+      "Bash(git mv *)"
     ]
   }
 }

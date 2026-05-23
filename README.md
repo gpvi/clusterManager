@@ -65,13 +65,15 @@
 │   ├── singleflight/            # 请求合并
 │   └── peer/                    # gRPC peer + memberlist
 ├── config/
-│   ├── conf.yaml            # 默认配置文件
+│   └── conf.yaml            # 默认配置文件
+├── deploy/                   # K8s 部署清单
+│   ├── rbac.yaml
+│   ├── operator.yaml
+│   ├── clusterd.yaml
 │   ├── crd/rediscluster.yaml # CRD 定义
-│   ├── deploy/              # K8s 部署清单
-│   │   ├── rbac.yaml
-│   │   ├── operator.yaml
-│   │   └── clusterd.yaml
 │   └── examples/            # CR 示例
+├── configs/
+│   └── redis.conf           # Redis 容器配置模板
 └── utils/                   # 工具函数
 ```
 
@@ -121,14 +123,14 @@ make build
 
 ```bash
 # 1. 部署 CRD
-kubectl apply -f config/crd/rediscluster.yaml
+kubectl apply -f deploy/crd/rediscluster.yaml
 
 # 2. 部署 RBAC + Operator
-kubectl apply -f config/deploy/rbac.yaml
-kubectl apply -f config/deploy/operator.yaml
+kubectl apply -f deploy/rbac.yaml
+kubectl apply -f deploy/operator.yaml
 
 # 3. 创建 RedisCluster CR
-kubectl apply -f config/examples/dev-cluster.yaml
+kubectl apply -f deploy/examples/dev-cluster.yaml
 
 # 4. 查看状态
 kubectl get rediscluster -o yaml
@@ -144,7 +146,7 @@ Operator 通过 reconcile loop 管理 CR 生命周期，状态机如下：
 
 ```bash
 # 部署 clusterd
-kubectl apply -f config/deploy/clusterd.yaml
+kubectl apply -f deploy/clusterd.yaml
 
 # 通过 gRPC 调用（需要 grpcurl 或自建客户端）
 grpcurl -plaintext <clusterd-ip>:50051 list
