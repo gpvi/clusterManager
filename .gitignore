@@ -7,10 +7,7 @@
 
 # Go build
 .gocache/
-cluster
-cluster-*
-cluster-linux
-*.exe
+build/
 *.test
 *.out
 
