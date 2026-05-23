@@ -7,21 +7,22 @@ import (
 	"context"
 	"testing"
 
-	"redisClusterManager/cluster/model"
+	"redisClusterManager/cluster/config"
 )
 
-func TestAddAction(t *testing.T) {
+func TestCreation(t *testing.T) {
 	requireIntegrationTest(t)
 
-	cfg, err := model.InitConfig()
+	cfg, err := config.InitConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
+	cfg.RedisContainerPort = 6379
 
 	ctx := context.Background()
 	clusterName := "myCluster"
-	err = ScaleClusterAction(ctx, cfg, 1, clusterName)
+	err = CreateClusterAction(ctx, cfg, 3, 2, clusterName)
 	if err != nil {
-		t.Errorf("ScaleCluster() error = %v", err)
+		t.Fatal(err)
 	}
 }

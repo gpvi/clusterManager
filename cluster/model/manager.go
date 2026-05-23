@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"redisClusterManager/cluster/config"
 	"redisClusterManager/cluster/utils"
 	"sort"
 	"sync"
@@ -33,7 +34,7 @@ type ClusterManager struct {
 	MasterSet         map[string]bool
 	nodeManager       PodManager
 	NodesPerShard     int
-	cacheInvalidator  CacheInvalidator
+	cacheInvalidator  config.CacheInvalidator
 }
 
 func NewClusterManager(nodesPerShard int, nodeManager PodManager) *ClusterManager {
@@ -55,7 +56,7 @@ func NewClusterManager(nodesPerShard int, nodeManager PodManager) *ClusterManage
 }
 
 // SetCacheInvalidator registers a callback for cache invalidation after slot migration.
-func (c *ClusterManager) SetCacheInvalidator(inv CacheInvalidator) {
+func (c *ClusterManager) SetCacheInvalidator(inv config.CacheInvalidator) {
 	c.cacheInvalidator = inv
 }
 
@@ -474,12 +475,12 @@ func (c *ClusterManager) AllocateSlots(ctx context.Context, clusterName string) 
 		fmt.Println("no current master node to allocate slots")
 		return fmt.Errorf("no available master nodes for slot allocation: %w", ErrNoNodesAvailable)
 	}
-	slotsPerMaster := TotalSlots / numMasters
+	slotsPerMaster := config.TotalSlots / numMasters
 	for i := 0; i < numMasters; i++ {
 		startPoint := i * slotsPerMaster
 		endPoint := startPoint + slotsPerMaster - 1
 		if i == numMasters-1 {
-			endPoint = TotalSlots - 1
+			endPoint = config.TotalSlots - 1
 		}
 
 		masterId := c.MasterIDs[i]
@@ -573,7 +574,7 @@ func (c *ClusterManager) MigratesSlotsToEmptyNode(ctx context.Context, clusterNa
 		return fmt.Errorf("no master nodes for slot migration")
 	}
 
-	newV := TotalSlots / len(c.MasterIDs)
+	newV := config.TotalSlots / len(c.MasterIDs)
 
 	// Phase 1: collect all slot migration tasks.
 	var tasks []slotTask
@@ -1002,8 +1003,8 @@ func (c *ClusterManager) VerifyAllocateSlots(ctx context.Context, clusterName st
 			if len(cluster.MasterIDs) == 0 {
 				break
 			}
-			slotsPerMaster := TotalSlots / len(cluster.MasterIDs)
-			remainder := TotalSlots % len(cluster.MasterIDs)
+			slotsPerMaster := config.TotalSlots / len(cluster.MasterIDs)
+			remainder := config.TotalSlots % len(cluster.MasterIDs)
 			ok := true
 			for i := 0; i < len(cluster.MasterIDs); i++ {
 				expectedSlots := slotsPerMaster

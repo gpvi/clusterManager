@@ -3,11 +3,11 @@ package main
 import (
 	"log"
 	"redisClusterManager/cluster/cmd"
-	"redisClusterManager/cluster/model"
+	"redisClusterManager/cluster/config"
 )
 
 func main() {
-	cfg, err := model.InitConfig()
+	cfg, err := config.InitConfig()
 	if err != nil {
 		log.Fatalf("failed to initialize config: %v", err)
 	}

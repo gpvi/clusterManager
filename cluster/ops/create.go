@@ -7,8 +7,10 @@ import (
 	"strconv"
 	"strings"
 
+	"redisClusterManager/cluster/backend"
+	"redisClusterManager/cluster/config"
 	"redisClusterManager/cluster/model"
-	"redisClusterManager/cluster/model/pipeline"
+	"redisClusterManager/cluster/pipeline"
 	"redisClusterManager/cluster/model/store"
 	"redisClusterManager/cluster/utils"
 )
@@ -26,8 +28,8 @@ func (c RedisClusterConfig) EffectiveNodesPerShard() int {
 	return c.LegacyReplica
 }
 
-func CreateClusterAction(ctx context.Context, cfg *model.RuntimeConfig, shardCount int, nodesPerShard int, clusterName string) error {
-	nodeManager, err := model.NewNodeManager(cfg)
+func CreateClusterAction(ctx context.Context, cfg *config.RuntimeConfig, shardCount int, nodesPerShard int, clusterName string) error {
+	nodeManager, err := backend.NewNodeManager(cfg)
 	if err != nil {
 		return fmt.Errorf("create node manager fail: %v", err)
 	}

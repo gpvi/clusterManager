@@ -7,13 +7,13 @@ import (
 	"context"
 	"testing"
 
-	"redisClusterManager/cluster/model"
+	"redisClusterManager/cluster/config"
 )
 
 func TestDeleteAllAction(t *testing.T) {
 	requireIntegrationTest(t)
 
-	cfg, err := model.InitConfig()
+	cfg, err := config.InitConfig()
 	if err != nil {
 		t.Fatal(err)
 	}

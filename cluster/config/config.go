@@ -1,4 +1,4 @@
-package model
+package config
 
 import (
 	"fmt"
@@ -10,6 +10,12 @@ import (
 	"strconv"
 	"strings"
 )
+
+// CacheInvalidator is called when Redis slot migration completes,
+// so the cache layer can evict stale entries for the affected key range.
+type CacheInvalidator interface {
+	InvalidateSlots(start, end int)
+}
 
 const TotalSlots int = 16384
 

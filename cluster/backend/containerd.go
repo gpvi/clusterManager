@@ -1,6 +1,6 @@
 //go:build containerd
 
-package model
+package backend
 
 import (
 	"context"
@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"redisClusterManager/cluster/config"
+	"redisClusterManager/cluster/model"
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
@@ -18,32 +21,32 @@ import (
 const containerdNamespace = "cluster-manager"
 
 type ContainerdNodeManager struct {
-	client   *containerd.Client
-	config   *RuntimeConfig
-	IPToNode   map[string]*RuntimeNode
-	HostToNode map[string]*RuntimeNode
-	IDToNode   map[string]*RuntimeNode
-	Nodes      []*RuntimeNode
-	Num        int
+	client      *containerd.Client
+	config      *config.RuntimeConfig
+	IPToNode    map[string]*model.RuntimeNode
+	HostToNode  map[string]*model.RuntimeNode
+	IDToNode    map[string]*model.RuntimeNode
+	Nodes       []*model.RuntimeNode
+	Num         int
 }
 
-func NewContainerdNodeManager(cfg *RuntimeConfig) (*ContainerdNodeManager, error) {
+func NewContainerdNodeManager(cfg *config.RuntimeConfig) (*ContainerdNodeManager, error) {
 	client, err := containerd.New(cfg.ContainerdSocket)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to containerd at %s: %w", cfg.ContainerdSocket, err)
 	}
 	return &ContainerdNodeManager{
-		client:   client,
-		config:   cfg,
-		IPToNode:   make(map[string]*RuntimeNode),
-		HostToNode: make(map[string]*RuntimeNode),
-		IDToNode:   make(map[string]*RuntimeNode),
-		Nodes:      make([]*RuntimeNode, 0, 10),
-		Num:        0,
+		client:      client,
+		config:      cfg,
+		IPToNode:    make(map[string]*model.RuntimeNode),
+		HostToNode:  make(map[string]*model.RuntimeNode),
+		IDToNode:    make(map[string]*model.RuntimeNode),
+		Nodes:       make([]*model.RuntimeNode, 0, 10),
+		Num:         0,
 	}, nil
 }
 
-func (c *ContainerdNodeManager) AddRuntimeNode(node *RuntimeNode) {
+func (c *ContainerdNodeManager) AddRuntimeNode(node *model.RuntimeNode) {
 	c.IPToNode[node.ConIp] = node
 	c.IDToNode[node.ID] = node
 	c.Nodes = append(c.Nodes, node)
@@ -52,7 +55,7 @@ func (c *ContainerdNodeManager) AddRuntimeNode(node *RuntimeNode) {
 		c.HostToNode[node.Hostname] = node
 	}
 	if node.Address.ClientAddr == "" {
-		node.Address = NodeAddress{
+		node.Address = model.NodeAddress{
 			ClusterAddr: fmt.Sprintf("%s:%d", node.ConIp, node.ConPort),
 			ClientAddr:  fmt.Sprintf("%s:%d", node.HostIP, node.HostPort),
 		}
@@ -68,9 +71,9 @@ func (c *ContainerdNodeManager) HasCluster(clusterName string) bool {
 	return false
 }
 
-func (c *ContainerdNodeManager) GetNodes() []*RuntimeNode   { return c.Nodes }
-func (c *ContainerdNodeManager) GetNodeByIP(ip string) *RuntimeNode { return c.IPToNode[ip] }
-func (c *ContainerdNodeManager) GetNodeByHost(host string) *RuntimeNode {
+func (c *ContainerdNodeManager) GetNodes() []*model.RuntimeNode   { return c.Nodes }
+func (c *ContainerdNodeManager) GetNodeByIP(ip string) *model.RuntimeNode { return c.IPToNode[ip] }
+func (c *ContainerdNodeManager) GetNodeByHost(host string) *model.RuntimeNode {
 	if c.HostToNode != nil {
 		if node, ok := c.HostToNode[host]; ok {
 			return node
@@ -178,7 +181,7 @@ func (c *ContainerdNodeManager) CreatePods(ctx context.Context, nodeNum int, clu
 		containerID := container.ID()
 		fmt.Printf("Container started: %s (%s)\n", containerName, containerID[:12])
 
-		node := RuntimeNode{
+		node := model.RuntimeNode{
 			Name:        containerName,
 			HostIP:      "127.0.0.1",
 			HostPort:    uint16(port),
@@ -270,9 +273,9 @@ func defaultCaps() []string {
 func (c *ContainerdNodeManager) ListPodsByCluster(ctx context.Context, clusterName string) error {
 	ctx = namespaces.WithNamespace(ctx, containerdNamespace)
 	c.Nodes = c.Nodes[:0]
-	c.IPToNode = make(map[string]*RuntimeNode)
-	c.HostToNode = make(map[string]*RuntimeNode)
-	c.IDToNode = make(map[string]*RuntimeNode)
+	c.IPToNode = make(map[string]*model.RuntimeNode)
+	c.HostToNode = make(map[string]*model.RuntimeNode)
+	c.IDToNode = make(map[string]*model.RuntimeNode)
 	c.Num = 0
 
 	containers, err := c.client.Containers(ctx,
@@ -294,7 +297,7 @@ func (c *ContainerdNodeManager) ListPodsByCluster(ctx context.Context, clusterNa
 		nodeIndex, _ := strconv.Atoi(nodeIndexStr)
 		port := int(c.config.RedisContainerPort) + (nodeIndex - 1)
 
-		node := &RuntimeNode{
+		node := &model.RuntimeNode{
 			Name:        container.ID(),
 			HostIP:      "127.0.0.1",
 			HostPort:    uint16(port),
@@ -340,8 +343,8 @@ func (c *ContainerdNodeManager) DeleteResources(ctx context.Context, clusterName
 	return nil
 }
 
-var _ PodManager = (*ContainerdNodeManager)(nil)
+var _ model.PodManager = (*ContainerdNodeManager)(nil)
 
-func newContainerdOrError(cfg *RuntimeConfig) (PodManager, error) {
+func newContainerdOrError(cfg *config.RuntimeConfig) (model.PodManager, error) {
 	return NewContainerdNodeManager(cfg)
 }

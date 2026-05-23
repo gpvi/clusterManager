@@ -2,15 +2,15 @@ package cmd
 
 import (
 	"fmt"
-	"redisClusterManager/cluster/model"
+	"redisClusterManager/cluster/config"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
-var appConfig *model.RuntimeConfig
+var appConfig *config.RuntimeConfig
 
-func SetConfig(cfg *model.RuntimeConfig) {
+func SetConfig(cfg *config.RuntimeConfig) {
 	appConfig = cfg
 }
 

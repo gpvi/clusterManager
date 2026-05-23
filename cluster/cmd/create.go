@@ -3,7 +3,7 @@ package cmd
 import (
 	"context"
 	"log"
-	"redisClusterManager/cluster/model/ops"
+	"redisClusterManager/cluster/ops"
 
 	"github.com/spf13/cobra"
 )

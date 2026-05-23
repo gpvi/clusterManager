@@ -5,14 +5,15 @@ import (
 	"fmt"
 	"os"
 
-	"redisClusterManager/cluster/model"
-	"redisClusterManager/cluster/model/pipeline"
+	"redisClusterManager/cluster/backend"
+	"redisClusterManager/cluster/config"
+	"redisClusterManager/cluster/pipeline"
 	"redisClusterManager/cluster/model/store"
 	"redisClusterManager/cluster/utils"
 )
 
-func DeleteAllContainers(ctx context.Context, cfg *model.RuntimeConfig, clusterName string) error {
-	nodeManager, err := model.NewNodeManager(cfg)
+func DeleteAllContainers(ctx context.Context, cfg *config.RuntimeConfig, clusterName string) error {
+	nodeManager, err := backend.NewNodeManager(cfg)
 	if err != nil {
 		return fmt.Errorf("create node manager fail: %v", err)
 	}

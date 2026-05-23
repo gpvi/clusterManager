@@ -5,7 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"redisClusterManager/cache"
-	"redisClusterManager/cluster/model"
+	"redisClusterManager/cluster/config"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -75,7 +75,7 @@ func init() {
 	// Wire cache command to appConfig if available.
 	cobra.OnInitialize(func() {
 		if appConfig == nil {
-			cfg, err := model.InitConfig()
+			cfg, err := config.InitConfig()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "init config: %v\n", err)
 				os.Exit(1)

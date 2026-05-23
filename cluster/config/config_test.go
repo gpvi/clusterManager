@@ -1,7 +1,7 @@
 //go:build integration
 // +build integration
 
-package model
+package config
 
 import (
 	"testing"
