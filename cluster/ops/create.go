@@ -129,7 +129,7 @@ func CreateClusterAction(ctx context.Context, cfg *config.RuntimeConfig, shardCo
 				os.Remove(path)
 			}
 			return utils.WriteToYAMLFile(path, config.RedisClusterConfig{
-				NodesPerShard: cm.NodesPerShard,
+				NodesPerShard: cm.NodesPerShard(),
 				Port:          cfg.RedisContainerPort,
 			})
 		},

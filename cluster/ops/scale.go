@@ -131,7 +131,7 @@ func ScaleClusterAction(ctx context.Context, cfg *config.RuntimeConfig, addition
 	p.Add(pipeline.Step{
 		Name: "set-roles",
 		Do: func(ctx context.Context) error {
-			cm.EmptyMasters = make([]*data.ClusterNode, 0)
+			cm.ResetEmptyMasters()
 			sum := additionalShards * nodesPerShard
 			newStart := nodeManager.GetNodeCount() - sum
 			masterToSlave := make(map[string][]string)
@@ -140,7 +140,7 @@ func ScaleClusterAction(ctx context.Context, cfg *config.RuntimeConfig, addition
 			var masterID string
 			for i := newStart; i < newStart+sum; i++ {
 				ip := nodeManager.GetNodes()[i].ConIp
-				ID := cm.IPToClusterID[ip]
+				ID := cm.NodeIDByIP(ip)
 				IDToIP[ID] = ip
 				if count == nodesPerShard {
 					count = 0
@@ -148,8 +148,7 @@ func ScaleClusterAction(ctx context.Context, cfg *config.RuntimeConfig, addition
 				if count == 0 {
 					masterToSlave[ID] = make([]string, 0)
 					masterID = ID
-					cm.MasterIDs = append(cm.MasterIDs, masterID)
-					cm.EmptyMasters = append(cm.EmptyMasters, cm.IDToClusterNode[masterID])
+					cm.AddNewMaster(masterID)
 				} else {
 					masterToSlave[masterID] = append(masterToSlave[masterID], ID)
 				}
@@ -190,7 +189,7 @@ func ScaleClusterAction(ctx context.Context, cfg *config.RuntimeConfig, addition
 				return err
 			}
 			defer s.Close()
-			totalShards := len(cm.MasterIDs)
+			totalShards := cm.MasterCount()
 			s.UpsertCluster(data.ClusterRecord{
 				Name: clusterName, Backend: cfg.Backend, Shards: totalShards,
 				NodesPerShard: nodesPerShard, RedisPort: int(cfg.RedisContainerPort),

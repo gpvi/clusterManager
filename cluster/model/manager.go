@@ -57,42 +57,98 @@ func (a ByIP) Len() int           { return len(a) }
 func (a ByIP) Less(i, j int) bool { return a[i].IP < a[j].IP }
 func (a ByIP) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 
+// clusterTopology holds the Redis cluster topology state.
+type clusterTopology struct {
+	nodes     map[string]*data.ClusterNode // ID -> node (was IDToClusterNode)
+	ipToID    map[string]string            // IP -> ID (was IPToClusterID)
+	list      []*data.ClusterNode          // all nodes (was ClusterNodeList)
+	masterIDs []string                     // master IDs (was MasterIDs)
+	masterSet map[string]bool              // master set (was MasterSet)
+	empty     []*data.ClusterNode          // empty masters (was EmptyMasters)
+}
+
+func newTopology() clusterTopology {
+	return clusterTopology{
+		nodes:     make(map[string]*data.ClusterNode),
+		ipToID:    make(map[string]string),
+		list:      make([]*data.ClusterNode, 0),
+		masterIDs: make([]string, 0),
+		masterSet: make(map[string]bool),
+		empty:     make([]*data.ClusterNode, 0),
+	}
+}
+
+// clusterRoles tracks master->slave replication assignments.
+type clusterRoles struct {
+	masterToSlave map[string][]string // master ID -> slave IDs (was MasterToSlave)
+	set           map[string]bool    // nodes with cluster set (was AlreadySetCluster)
+}
+
+func newRoles() clusterRoles {
+	return clusterRoles{
+		masterToSlave: make(map[string][]string),
+		set:           make(map[string]bool),
+	}
+}
+
+// meetState tracks MEET progress to avoid duplicate CLUSTER MEET commands.
+type meetState struct {
+	met map[string]bool // nodes already met (was AlreadyMeetNode)
+}
+
+func newMeetState() meetState {
+	return meetState{met: make(map[string]bool)}
+}
+
 // ClusterManager manages Redis cluster operations.
 type ClusterManager struct {
-	EmptyMasters      []*data.ClusterNode
-	IDToClusterNode   map[string]*data.ClusterNode
-	IPToClusterID     map[string]string
-	AlreadyMeetNode   map[string]bool
-	MasterToSlave     map[string][]string
-	AlreadySetCluster map[string]bool
-	ClusterNodeList   []*data.ClusterNode
-	MasterIDs         []string
-	MasterSet         map[string]bool
-	nodeManager       PodManager
-	NodesPerShard     int
-	cacheInvalidator  CacheInvalidator
+	topo             clusterTopology
+	roles            clusterRoles
+	meet             meetState
+	nodeManager      PodManager
+	nodesPerShard    int
+	cacheInvalidator CacheInvalidator
 }
 
 // NewClusterManager creates a new ClusterManager.
 func NewClusterManager(nodesPerShard int, nodeManager PodManager) *ClusterManager {
 	return &ClusterManager{
-		EmptyMasters:      make([]*data.ClusterNode, 0),
-		IDToClusterNode:   make(map[string]*data.ClusterNode),
-		IPToClusterID:     make(map[string]string),
-		AlreadyMeetNode:   make(map[string]bool),
-		MasterToSlave:     make(map[string][]string),
-		AlreadySetCluster: make(map[string]bool),
-		ClusterNodeList:   make([]*data.ClusterNode, 0),
-		MasterIDs:         make([]string, 0),
-		MasterSet:         make(map[string]bool),
-		nodeManager:       nodeManager,
-		NodesPerShard:     nodesPerShard,
+		topo:          newTopology(),
+		roles:         newRoles(),
+		meet:          newMeetState(),
+		nodeManager:   nodeManager,
+		nodesPerShard: nodesPerShard,
 	}
 }
 
 // SetCacheInvalidator registers a callback for cache invalidation after slot migration.
 func (c *ClusterManager) SetCacheInvalidator(inv CacheInvalidator) {
 	c.cacheInvalidator = inv
+}
+
+// --- Exported accessors for external packages ---
+
+// NodesPerShard returns the number of nodes per shard.
+func (c *ClusterManager) NodesPerShard() int { return c.nodesPerShard }
+
+// MasterCount returns the number of master nodes.
+func (c *ClusterManager) MasterCount() int { return len(c.topo.masterIDs) }
+
+// NodeIDByIP returns the cluster node ID for the given IP address.
+func (c *ClusterManager) NodeIDByIP(ip string) string { return c.topo.ipToID[ip] }
+
+// ClusterNodeByID returns the cluster node for the given ID.
+func (c *ClusterManager) ClusterNodeByID(id string) *data.ClusterNode { return c.topo.nodes[id] }
+
+// ResetEmptyMasters clears the empty masters list.
+func (c *ClusterManager) ResetEmptyMasters() { c.topo.empty = make([]*data.ClusterNode, 0) }
+
+// AddNewMaster appends a master ID and its node to the empty masters list.
+func (c *ClusterManager) AddNewMaster(masterID string) {
+	c.topo.masterIDs = append(c.topo.masterIDs, masterID)
+	if node, ok := c.topo.nodes[masterID]; ok {
+		c.topo.empty = append(c.topo.empty, node)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -114,7 +170,7 @@ func (c *ClusterManager) CreatePodsForCluster(ctx context.Context, clusterName s
 }
 
 func (c *ClusterManager) createPodsForCluster(ctx context.Context, shardCount int, clusterName string) error {
-	sum := shardCount * c.NodesPerShard
+	sum := shardCount * c.nodesPerShard
 	return c.CreatePodsForCluster(ctx, clusterName, sum)
 }
 
@@ -148,7 +204,7 @@ func (c *ClusterManager) connectToClusterNode(ctx context.Context, clusterName s
 }
 
 func (c *ClusterManager) findExistingNode(clusterName string, shardCount int) (*data.RuntimeNode, error) {
-	sum := shardCount * c.NodesPerShard
+	sum := shardCount * c.nodesPerShard
 	limit := c.nodeManager.GetNodeCount() - sum
 	for i := 0; i < limit; i++ {
 		if c.nodeManager.GetNodes()[i].ClusterName == clusterName {
@@ -179,7 +235,7 @@ func (c *ClusterManager) Bootstrap(ctx context.Context, shardCount int, clusterN
 	if err := c.createPodsForCluster(ctx, shardCount, clusterName); err != nil {
 		return err
 	}
-	fmt.Printf("finish created, %d shards, %d nodes per shard\n", shardCount, c.NodesPerShard)
+	fmt.Printf("finish created, %d shards, %d nodes per shard\n", shardCount, c.nodesPerShard)
 	cli, err := c.connectToClusterNode(ctx, clusterName)
 	if err != nil {
 		return err
@@ -223,7 +279,7 @@ func (c *ClusterManager) AddShards(ctx context.Context, shardCount int, clusterN
 	if err := c.meetAndSyncNewNodes(ctx, cli, clusterName, shardCount); err != nil {
 		return err
 	}
-	c.EmptyMasters = make([]*data.ClusterNode, 0)
+	c.topo.empty = make([]*data.ClusterNode, 0)
 	return c.assignRolesToNewNodes(ctx, clusterName, shardCount)
 }
 
@@ -239,24 +295,24 @@ func (c *ClusterManager) meetAndSyncNewNodes(ctx context.Context, cli *redis.Cli
 }
 
 func (c *ClusterManager) assignRolesToNewNodes(ctx context.Context, clusterName string, shardCount int) error {
-	sum := shardCount * c.NodesPerShard
+	sum := shardCount * c.nodesPerShard
 	newNodeStartIndex := c.nodeManager.GetNodeCount() - sum
-	masterToSlave := c.MasterToSlave
+	masterToSlave := c.roles.masterToSlave
 	IDToIP := make(map[string]string)
 	count := 0
 	masterID := ""
 	for i := newNodeStartIndex; i < newNodeStartIndex+sum; i++ {
 		ip := c.nodeManager.GetNodes()[i].ConIp
-		id := c.IPToClusterID[ip]
+		id := c.topo.ipToID[ip]
 		IDToIP[id] = ip
-		if count == c.NodesPerShard {
+		if count == c.nodesPerShard {
 			count = 0
 		}
 		if count == 0 {
 			masterToSlave[id] = make([]string, 0)
 			masterID = id
-			c.MasterIDs = append(c.MasterIDs, masterID)
-			c.EmptyMasters = append(c.EmptyMasters, c.IDToClusterNode[masterID])
+			c.topo.masterIDs = append(c.topo.masterIDs, masterID)
+			c.topo.empty = append(c.topo.empty, c.topo.nodes[masterID])
 		} else {
 			masterToSlave[masterID] = append(masterToSlave[masterID], id)
 		}
@@ -280,8 +336,8 @@ func (c *ClusterManager) configureNewNodeReplication(ctx context.Context, master
 			if err := c.SetNodeAsSlave(ctx, masterIP, slaveIP, clusterName); err != nil {
 				return err
 			}
-			c.AlreadySetCluster[masterID] = true
-			c.AlreadySetCluster[slaveID] = true
+			c.roles.set[masterID] = true
+			c.roles.set[slaveID] = true
 		}
 	}
 	_, err := c.verifyNodeTypeSet(ctx, masterToSlave, clusterName)
@@ -297,8 +353,8 @@ func (c *ClusterManager) configureNewNodeReplication(ctx context.Context, master
 
 // SortInfo sorts cluster node lists by IP.
 func (c *ClusterManager) SortInfo() {
-	c.sortClusterNodesByIP(c.ClusterNodeList)
-	c.sortClusterNodesByIP(c.EmptyMasters)
+	c.sortClusterNodesByIP(c.topo.list)
+	c.sortClusterNodesByIP(c.topo.empty)
 }
 
 func (c *ClusterManager) sortClusterNodesByIP(nodes []*data.ClusterNode) {
@@ -319,7 +375,7 @@ func (c *ClusterManager) MeetNodes(client *redis.Client, ctx context.Context, cl
 
 func (c *ClusterManager) sendMeetCommands(client *redis.Client, ctx context.Context, clusterName string) error {
 	for _, node := range c.nodeManager.GetNodes() {
-		if node.ClusterName != clusterName || c.AlreadyMeetNode[node.ConIp] {
+		if node.ClusterName != clusterName || c.meet.met[node.ConIp] {
 			continue
 		}
 		meetAddr := node.ClusterMeetAddr()
@@ -383,34 +439,34 @@ func (c *ClusterManager) SetAllNodeRole(ctx context.Context, clusterName string)
 }
 
 func (c *ClusterManager) assignMastersAndSlaves(ctx context.Context, masterToSlave map[string][]string, clusterName string) error {
-	n := len(c.ClusterNodeList) / c.NodesPerShard
-	expectedNodes := len(c.ClusterNodeList)
+	n := len(c.topo.list) / c.nodesPerShard
+	expectedNodes := len(c.topo.list)
 	for i := 0; i < n; i++ {
-		if c.ClusterNodeList[i].ClusterName != clusterName {
+		if c.topo.list[i].ClusterName != clusterName {
 			continue
 		}
-		masterIP := c.ClusterNodeList[i].IP
-		masterID := c.IPToClusterID[masterIP]
+		masterIP := c.topo.list[i].IP
+		masterID := c.topo.ipToID[masterIP]
 		masterToSlave[masterID] = make([]string, 0)
-		c.MasterIDs = append(c.MasterIDs, masterID)
+		c.topo.masterIDs = append(c.topo.masterIDs, masterID)
 
-		slaveStart := n + (i * (c.NodesPerShard - 1))
-		slaveEnd := slaveStart + c.NodesPerShard - 1
+		slaveStart := n + (i * (c.nodesPerShard - 1))
+		slaveEnd := slaveStart + c.nodesPerShard - 1
 		for j := slaveStart; j < slaveEnd && j < expectedNodes; j++ {
-			if c.ClusterNodeList[j].ClusterName != clusterName {
+			if c.topo.list[j].ClusterName != clusterName {
 				continue
 			}
-			slaveIP := c.ClusterNodeList[j].IP
-			slaveID := c.IPToClusterID[slaveIP]
-			if c.AlreadySetCluster[masterID] && c.AlreadySetCluster[slaveID] {
+			slaveIP := c.topo.list[j].IP
+			slaveID := c.topo.ipToID[slaveIP]
+			if c.roles.set[masterID] && c.roles.set[slaveID] {
 				continue
 			}
 			masterToSlave[masterID] = append(masterToSlave[masterID], slaveID)
 			if err := c.SetNodeAsSlave(ctx, masterIP, slaveIP, clusterName); err != nil {
 				return err
 			}
-			c.AlreadySetCluster[masterID] = true
-			c.AlreadySetCluster[slaveID] = true
+			c.roles.set[masterID] = true
+			c.roles.set[slaveID] = true
 		}
 	}
 	return nil
@@ -423,9 +479,9 @@ func (c *ClusterManager) SetNodeAsSlave(ctx context.Context, masterIP string, sl
 		return err
 	}
 	defer cli.Close()
-	fmt.Printf("slave: %s\nid: %s\n", slaveIP, c.IPToClusterID[slaveIP])
+	fmt.Printf("slave: %s\nid: %s\n", slaveIP, c.topo.ipToID[slaveIP])
 
-	masterID := c.IPToClusterID[masterIP]
+	masterID := c.topo.ipToID[masterIP]
 	if err := cli.ClusterReplicate(ctx, masterID).Err(); err != nil {
 		fmt.Printf("Error executing ClusterReplicate for slave %s %v\n", slaveIP, err)
 		return fmt.Errorf("failed to set node %s as replica of master %s: %v", slaveIP, masterIP, err)
@@ -465,7 +521,7 @@ func (c *ClusterManager) AllocateSlots(ctx context.Context, clusterName string) 
 }
 
 func (c *ClusterManager) assignSlotsToMasters(ctx context.Context, clusterName string) error {
-	numMasters := len(c.MasterIDs)
+	numMasters := len(c.topo.masterIDs)
 	if numMasters == 0 {
 		fmt.Println("no current master node to allocate slots")
 		return fmt.Errorf("no available master nodes for slot allocation: %w", ErrNoNodesAvailable)
@@ -477,8 +533,8 @@ func (c *ClusterManager) assignSlotsToMasters(ctx context.Context, clusterName s
 		if i == numMasters-1 {
 			endPoint = TotalSlots - 1
 		}
-		masterID := c.MasterIDs[i]
-		masterNode, ok := c.IDToClusterNode[masterID]
+		masterID := c.topo.masterIDs[i]
+		masterNode, ok := c.topo.nodes[masterID]
 		if !ok {
 			return fmt.Errorf("master node not found for ID %s", masterID)
 		}
@@ -520,13 +576,13 @@ func (c *ClusterManager) UpdateAfterMeet(ctx context.Context, LoginNode *data.Ru
 		if node.ClusterName != clusterName {
 			continue
 		}
-		if _, exist := c.IDToClusterNode[node.ID]; exist {
+		if _, exist := c.topo.nodes[node.ID]; exist {
 			continue
 		}
-		c.AlreadyMeetNode[node.IP] = true
-		c.IDToClusterNode[node.ID] = &node
-		c.IPToClusterID[node.IP] = node.ID
-		c.ClusterNodeList = append(c.ClusterNodeList, &node)
+		c.meet.met[node.IP] = true
+		c.topo.nodes[node.ID] = &node
+		c.topo.ipToID[node.IP] = node.ID
+		c.topo.list = append(c.topo.list, &node)
 	}
 	c.SortInfo()
 	return nil
@@ -534,9 +590,9 @@ func (c *ClusterManager) UpdateAfterMeet(ctx context.Context, LoginNode *data.Ru
 
 // UpdateAfterSetNodeRole refreshes the master/slave topology after role changes.
 func (c *ClusterManager) UpdateAfterSetNodeRole(ctx context.Context, LoginNode *data.RuntimeNode, clusterName string) error {
-	c.MasterToSlave = make(map[string][]string)
-	c.MasterIDs = make([]string, 0)
-	c.MasterSet = make(map[string]bool)
+	c.roles.masterToSlave = make(map[string][]string)
+	c.topo.masterIDs = make([]string, 0)
+	c.topo.masterSet = make(map[string]bool)
 	if c.nodeManager.GetNodeCount() == 0 {
 		return nil
 	}
@@ -565,20 +621,20 @@ func (c *ClusterManager) classifyNodesByType(nodes []data.ClusterNode) (masters,
 
 func (c *ClusterManager) buildMasterSlaveTopology(masters, slaves []data.ClusterNode) error {
 	for _, master := range masters {
-		c.MasterIDs = append(c.MasterIDs, master.ID)
-		c.MasterSet[master.ID] = true
-		c.MasterToSlave[master.ID] = make([]string, 0)
+		c.topo.masterIDs = append(c.topo.masterIDs, master.ID)
+		c.topo.masterSet[master.ID] = true
+		c.roles.masterToSlave[master.ID] = make([]string, 0)
 	}
 	for _, slave := range slaves {
-		if _, exists := c.MasterSet[slave.MasterID]; !exists {
+		if _, exists := c.topo.masterSet[slave.MasterID]; !exists {
 			return fmt.Errorf("master node %s not found for slave %s", slave.MasterID, slave.ID)
 		}
-		c.MasterToSlave[slave.MasterID] = append(c.MasterToSlave[slave.MasterID], slave.ID)
+		c.roles.masterToSlave[slave.MasterID] = append(c.roles.masterToSlave[slave.MasterID], slave.ID)
 	}
-	for _, v := range c.MasterToSlave {
+	for _, v := range c.roles.masterToSlave {
 		sort.Strings(v)
 	}
-	sort.Strings(c.MasterIDs)
+	sort.Strings(c.topo.masterIDs)
 	return nil
 }
 
@@ -587,7 +643,7 @@ func (c *ClusterManager) UpdateSlots(ctx context.Context, LoginNode *data.Runtim
 	if c.nodeManager.GetNodeCount() == 0 {
 		return nil
 	}
-	c.EmptyMasters = make([]*data.ClusterNode, 0)
+	c.topo.empty = make([]*data.ClusterNode, 0)
 	nodes, err := c.GetClusterNodes(ctx, LoginNode, clusterName)
 	if err != nil {
 		return err
@@ -600,12 +656,12 @@ func (c *ClusterManager) UpdateSlots(ctx context.Context, LoginNode *data.Runtim
 		if node.NodeType != data.Master {
 			continue
 		}
-		if _, ok := c.IDToClusterNode[node.ID]; !ok {
+		if _, ok := c.topo.nodes[node.ID]; !ok {
 			continue
 		}
-		c.IDToClusterNode[node.ID].SlotsNum = c.calculateSlots(node.Slots)
+		c.topo.nodes[node.ID].SlotsNum = c.calculateSlots(node.Slots)
 		if len(node.Slots) == 0 {
-			c.EmptyMasters = append(c.EmptyMasters, &node)
+			c.topo.empty = append(c.topo.empty, &node)
 		}
 	}
 	return nil
@@ -625,7 +681,7 @@ func (c *ClusterManager) PrintClusterNodesInfo(ctx context.Context) error {
 	if len(c.nodeManager.GetNodes()) == 0 {
 		return fmt.Errorf("no nodes available: %w", ErrNoNodesAvailable)
 	}
-	time.Sleep(time.Duration(len(c.ClusterNodeList)/3) * time.Second)
+	time.Sleep(time.Duration(len(c.topo.list)/3) * time.Second)
 	client, err := data.CreateRedisClient(c.nodeManager.GetNodes()[0].ClientConnAddr())
 	if err != nil {
 		return fmt.Errorf("failed to create Redis client: %w", err)
@@ -663,10 +719,10 @@ func (c *ClusterManager) printClusterNodeLines(nodesInfo string) {
 
 // MigrateSlotsToEmptyNode migrates slots from existing masters to empty master nodes.
 func (c *ClusterManager) MigrateSlotsToEmptyNode(ctx context.Context, clusterName string) error {
-	if len(c.EmptyMasters) == 0 {
+	if len(c.topo.empty) == 0 {
 		return fmt.Errorf("no Empty master")
 	}
-	if len(c.MasterIDs) == 0 {
+	if len(c.topo.masterIDs) == 0 {
 		return fmt.Errorf("no master nodes for slot migration")
 	}
 	tasks := c.collectSlotTasks(clusterName)
@@ -684,11 +740,11 @@ func (c *ClusterManager) MigrateSlotsToEmptyNode(ctx context.Context, clusterNam
 }
 
 func (c *ClusterManager) collectSlotTasks(clusterName string) []slotTask {
-	newV := TotalSlots / len(c.MasterIDs)
+	newV := TotalSlots / len(c.topo.masterIDs)
 	var tasks []slotTask
 	empIdx := 0
-	for _, masterID := range c.MasterIDs {
-		masterNode, ok := c.IDToClusterNode[masterID]
+	for _, masterID := range c.topo.masterIDs {
+		masterNode, ok := c.topo.nodes[masterID]
 		if !ok || masterNode.SlotsNum == 0 || masterNode.ClusterName != clusterName || masterNode.SlotsNum <= newV {
 			continue
 		}
@@ -699,14 +755,14 @@ func (c *ClusterManager) collectSlotTasks(clusterName string) []slotTask {
 
 func (c *ClusterManager) collectTasksFromMaster(masterNode *data.ClusterNode, newV, empIdx int, tasks *[]slotTask) int {
 	for _, slot := range masterNode.Slots {
-		for slotNum := slot.End; slotNum >= slot.Start && empIdx < len(c.EmptyMasters); slotNum-- {
-			if masterNode.ID == c.EmptyMasters[empIdx].ID {
+		for slotNum := slot.End; slotNum >= slot.Start && empIdx < len(c.topo.empty); slotNum-- {
+			if masterNode.ID == c.topo.empty[empIdx].ID {
 				break
 			}
 			*tasks = append(*tasks, c.buildSlotTask(slotNum, masterNode, empIdx))
-			c.EmptyMasters[empIdx].SlotsNum++
+			c.topo.empty[empIdx].SlotsNum++
 			masterNode.SlotsNum--
-			if c.EmptyMasters[empIdx].SlotsNum == newV {
+			if c.topo.empty[empIdx].SlotsNum == newV {
 				empIdx++
 			}
 			if masterNode.SlotsNum == newV {
@@ -718,8 +774,8 @@ func (c *ClusterManager) collectTasksFromMaster(masterNode *data.ClusterNode, ne
 }
 
 func (c *ClusterManager) buildSlotTask(slotNum int, masterNode *data.ClusterNode, empIdx int) slotTask {
-	toIP := c.EmptyMasters[empIdx].IP
-	toID := c.EmptyMasters[empIdx].ID
+	toIP := c.topo.empty[empIdx].IP
+	toID := c.topo.empty[empIdx].ID
 	destRuntime := c.nodeManager.GetNodeByHost(toIP)
 	fromRuntime := c.nodeManager.GetNodeByHost(masterNode.IP)
 	var destPort, fromPort, conPort uint16
@@ -988,7 +1044,7 @@ func (c *ClusterManager) checkNodeTypeWithRetry(ctx context.Context, node *data.
 			time.Sleep(2 * time.Second)
 			continue
 		}
-		if c.equalClusterNodeType(masterToSlave, c.MasterToSlave) {
+		if c.equalClusterNodeType(masterToSlave, c.roles.masterToSlave) {
 			return true, nil
 		}
 		fmt.Printf("%v try %d /10 sync fail\n", node.Name, i+1)
@@ -1062,18 +1118,18 @@ func (c *ClusterManager) checkSlotCounts(ctx context.Context, container *data.Ru
 		if err := c.UpdateSlots(ctx, container, clusterName); err != nil {
 			return err
 		}
-		if len(c.MasterIDs) == 0 {
+		if len(c.topo.masterIDs) == 0 {
 			break
 		}
-		slotsPerMaster := TotalSlots / len(c.MasterIDs)
-		remainder := TotalSlots % len(c.MasterIDs)
+		slotsPerMaster := TotalSlots / len(c.topo.masterIDs)
+		remainder := TotalSlots % len(c.topo.masterIDs)
 		ok := true
-		for i := 0; i < len(c.MasterIDs); i++ {
+		for i := 0; i < len(c.topo.masterIDs); i++ {
 			expectedSlots := slotsPerMaster
-			if i == len(c.MasterIDs)-1 && remainder != 0 {
+			if i == len(c.topo.masterIDs)-1 && remainder != 0 {
 				expectedSlots = slotsPerMaster + remainder
 			}
-			masterNode := c.IDToClusterNode[c.MasterIDs[i]]
+			masterNode := c.topo.nodes[c.topo.masterIDs[i]]
 			if masterNode == nil || masterNode.SlotsNum != expectedSlots {
 				ok = false
 				break
