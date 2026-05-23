@@ -1,9 +1,0 @@
-apiVersion: cache.example.com/v1
-kind: RedisCluster
-metadata:
-  name: dev-cluster
-spec:
-  shards: 3
-  nodesPerShard: 2
-  redisPort: 6379
-  image: myredis:latest

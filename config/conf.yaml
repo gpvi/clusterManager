@@ -1,4 +1,4 @@
-backend: "k8s"
+backend: "podman"
 db_path: ""
 containerd_socket: ""
 
@@ -8,11 +8,6 @@ paths:
   redis_host_data_path: "configs"
   redis_config_data_path: "/data/redis/data"
   runtime_state_dir: "runtime"
-
-kubernetes:
-  kube_config_path: ""
-  namespace: "default"
-  base_node_port: 30000
 
 configs:
   save_file_name: "run_time_config.yaml"

@@ -22,5 +22,4 @@ type CacheInvalidator interface {
 }
 
 // Compile-time checks that default node managers satisfy PodManager.
-var _ PodManager = (*K8sNodeManager)(nil)
 var _ PodManager = (*PodmanNodeManager)(nil)
