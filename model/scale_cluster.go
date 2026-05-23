@@ -30,6 +30,11 @@ func ScaleClusterAction(ctx context.Context, cfg *RuntimeConfig, additionalShard
 
 	clusterManager := NewClusterManager(nodesPerShard, nodeManager)
 
+	// Register cache invalidator if the caller injected one (in-process mode).
+	if cfg.CacheInvalidator != nil {
+		clusterManager.SetCacheInvalidator(cfg.CacheInvalidator)
+	}
+
 	err = nodeManager.ListPodsByCluster(ctx, clusterName)
 	if err != nil {
 		return err

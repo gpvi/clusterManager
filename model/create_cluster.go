@@ -32,6 +32,11 @@ func CreateClusterAction(ctx context.Context, cfg *RuntimeConfig, shardCount int
 	}
 	clusterManager := NewClusterManager(nodesPerShard, nodeManager)
 
+	// Register cache invalidator if the caller injected one (in-process mode).
+	if cfg.CacheInvalidator != nil {
+		clusterManager.SetCacheInvalidator(cfg.CacheInvalidator)
+	}
+
 	if shardCount <= 0 {
 		return fmt.Errorf("shard count must be greater than 0")
 	}

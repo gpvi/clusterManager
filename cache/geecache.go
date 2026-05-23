@@ -203,19 +203,6 @@ func (g *Group) fetchFromPeer(pg peer.PeerGetter, key string) (ByteView, error) 
 	return v, nil
 }
 
-// getFromPeer uses the legacy PeerGetter interface.
-func (g *Group) getFromPeer(pg PeerGetter, key string) (ByteView, error) {
-	req := &pb.Request{Group: g.name, Key: key}
-	res := &pb.Response{}
-	err := pg.Get(req, res)
-	if err != nil {
-		return ByteView{}, err
-	}
-	v := ByteView{b: res.Value}
-	g.populateCache(key, v)
-	return v, nil
-}
-
 func (g *Group) getLocally(key string) (ByteView, error) {
 	// Rate-limit DB loads.
 	if g.dbLimiter != nil {

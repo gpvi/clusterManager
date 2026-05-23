@@ -113,7 +113,10 @@ func (c *PodmanNodeManager) CreatePods(ctx context.Context, nodeNum int, cluster
 			"redis-server", configMountPath + "/redis.conf",
 			"--port", strconv.Itoa(port),
 			"--cluster-announce-bus-port", strconv.Itoa(busPort),
-			"--cluster-announce-ip", containerName,
+		}
+		// Only add --cluster-announce-ip when DNS is enabled.
+		if c.config.DNSEnabled() {
+			args = append(args, "--cluster-announce-ip", containerName)
 		}
 
 		cmd := exec.CommandContext(ctx, "podman", args...)
@@ -154,16 +157,20 @@ func (c *PodmanNodeManager) CreatePods(ctx context.Context, nodeNum int, cluster
 
 		fmt.Printf("Container %s is running with IP %s (host port: %d)\n", containerName, containerIP, hostPort)
 
-		c.AddRuntimeNode(&RuntimeNode{
+		node := RuntimeNode{
 			Name:        containerName,
 			HostIP:      "127.0.0.1",
 			HostPort:    hostPort,
 			ConIp:       containerIP,
-			Hostname:    containerName,
 			ID:          containerID[:12],
 			ConPort:     c.config.RedisContainerPort,
 			ClusterName: clusterName,
-		})
+		}
+		// Only set hostname when DNS is enabled.
+		if c.config.DNSEnabled() {
+			node.Hostname = containerName
+		}
+		c.AddRuntimeNode(&node)
 	}
 
 	return nil
@@ -260,10 +267,12 @@ func (c *PodmanNodeManager) ListPodsByCluster(ctx context.Context, clusterName s
 			HostIP:      "127.0.0.1",
 			HostPort:    hostPort,
 			ConIp:       containerIP,
-			Hostname:    name,
 			ID:          fullID[:12],
 			ConPort:     c.config.RedisContainerPort,
 			ClusterName: clusterName,
+		}
+		if c.config.DNSEnabled() {
+			node.Hostname = name
 		}
 		c.Nodes = append(c.Nodes, node)
 		c.IDToNode[node.ID] = node

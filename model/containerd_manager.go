@@ -120,13 +120,17 @@ func (c *ContainerdNodeManager) CreatePods(ctx context.Context, nodeNum int, clu
 		dataHostPath := filepath.Join(c.config.RedisHostDataPath, clusterName)
 
 		spec := defaultSpec()
-		spec.Process.Args = []string{
+		redisArgs := []string{
 			"redis-server",
 			c.config.RedisConfigPath + "/redis.conf",
 			"--port", strconv.Itoa(port),
 			"--cluster-announce-bus-port", strconv.Itoa(busPort),
-			"--cluster-announce-ip", containerName,
 		}
+		// Only add --cluster-announce-ip when DNS is enabled.
+		if c.config.DNSEnabled() {
+			redisArgs = append(redisArgs, "--cluster-announce-ip", containerName)
+		}
+		spec.Process.Args = redisArgs
 		spec.Mounts = []specs.Mount{
 			{
 				Destination: c.config.RedisConfigPath,
@@ -173,16 +177,20 @@ func (c *ContainerdNodeManager) CreatePods(ctx context.Context, nodeNum int, clu
 		containerID := container.ID()
 		fmt.Printf("Container started: %s (%s)\n", containerName, containerID[:12])
 
-		c.AddRuntimeNode(&RuntimeNode{
+		node := RuntimeNode{
 			Name:        containerName,
 			HostIP:      "127.0.0.1",
 			HostPort:    uint16(port),
 			ConIp:       "127.0.0.1",
-			Hostname:    containerName,
 			ID:          containerID[:12],
 			ConPort:     uint16(port),
 			ClusterName: clusterName,
-		})
+		}
+		// Only set hostname when DNS is enabled.
+		if c.config.DNSEnabled() {
+			node.Hostname = containerName
+		}
+		c.AddRuntimeNode(&node)
 	}
 
 	return nil
@@ -290,10 +298,12 @@ func (c *ContainerdNodeManager) ListPodsByCluster(ctx context.Context, clusterNa
 			HostIP:      "127.0.0.1",
 			HostPort:    uint16(port),
 			ConIp:       "127.0.0.1",
-			Hostname:    container.ID(),
 			ID:          container.ID()[:12],
 			ConPort:     uint16(port),
 			ClusterName: info.Labels["cluster-name"],
+		}
+		if c.config.DNSEnabled() {
+			node.Hostname = container.ID()
 		}
 		c.Nodes = append(c.Nodes, node)
 		c.IDToNode[node.ID] = node

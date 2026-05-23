@@ -36,9 +36,5 @@ func init() {
 	createCmd.Flags().IntVarP(&nodesPerShard, "nodes-per-shard", "r", 2, "Number of Redis nodes in each shard, including the master")
 	createCmd.Flags().StringVarP(&clusterName, "clusterName", "n", "cluster", "Name of the cluster")
 	createCmd.Flags().Uint16VarP(&redisPort, "port", "p", 6379, "Port of the Redis container")
-	createCmd.Flags().IntVar(&shardCount, "shaderNum", 3, "Deprecated alias for --shards")
-	_ = createCmd.Flags().MarkDeprecated("shaderNum", "use --shards instead")
-	createCmd.Flags().IntVar(&nodesPerShard, "replica", 2, "Deprecated alias for --nodes-per-shard")
-	_ = createCmd.Flags().MarkDeprecated("replica", "use --nodes-per-shard instead")
 	RootCmd.AddCommand(createCmd)
 }

@@ -28,8 +28,6 @@ var scaleCmd = &cobra.Command{
 
 func init() {
 	scaleCmd.Flags().IntVarP(&additionalShards, "shards", "s", 1, "Number of shards to add")
-	scaleCmd.Flags().IntVar(&additionalShards, "shaderNum", 1, "Deprecated alias for --shards")
-	_ = scaleCmd.Flags().MarkDeprecated("shaderNum", "use --shards instead")
 	scaleCmd.Flags().StringVarP(&clusterName, "clusterName", "n", "", "Name of the cluster")
 	RootCmd.AddCommand(scaleCmd)
 }

@@ -31,6 +31,9 @@ type RuntimeConfig struct {
 	RedisContainerPort  uint16
 	Cache               *CacheConfig
 	DNS                 *DNSConfig
+	// CacheInvalidator is set by the cache subsystem when running in-process.
+	// If non-nil, it is registered with each ClusterManager created by action functions.
+	CacheInvalidator CacheInvalidator
 }
 
 type Config struct {

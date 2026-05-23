@@ -183,13 +183,8 @@ func (c *K8sNodeManager) CreatePods(ctx context.Context, nodeNum int, clusterNam
 					{
 						Name:  "redis",
 						Image: c.config.ImageName,
-						Command: []string{
-							"redis-server",
-							"/data/redis/config/redis.conf",
-							"--port", strconv.Itoa(int(c.config.RedisContainerPort)),
-							"--cluster-announce-bus-port", strconv.Itoa(int(c.config.RedisContainerPort + 10000)),
-							"--cluster-announce-ip", podName,
-						},
+						// Build command conditionally — only add --cluster-announce-ip when DNS is enabled.
+						Command: c.podCommand(c.config.RedisContainerPort, podName),
 						Ports: []corev1.ContainerPort{
 							{Name: "redis", ContainerPort: int32(c.config.RedisContainerPort)},
 							{Name: "bus", ContainerPort: int32(c.config.RedisContainerPort + 10000)},
@@ -300,16 +295,20 @@ func (c *K8sNodeManager) CreatePods(ctx context.Context, nodeNum int, clusterNam
 				return
 			}
 
-			readyCh <- readyResult{node: RuntimeNode{
+			node := RuntimeNode{
 				Name:        pod.Name,
 				HostIP:      "127.0.0.1",
 				HostPort:    nodePort,
 				ConIp:       pod.Status.PodIP,
-				Hostname:    pod.Name,
 				ID:          string(pod.UID),
 				ConPort:     c.config.RedisContainerPort,
 				ClusterName: clusterName,
-			}}
+			}
+			// Only set hostname when DNS is enabled.
+			if c.config.DNSEnabled() {
+				node.Hostname = pod.Name
+			}
+			readyCh <- readyResult{node: node}
 		}(podName)
 	}
 
@@ -322,6 +321,23 @@ func (c *K8sNodeManager) CreatePods(ctx context.Context, nodeNum int, clusterNam
 	}
 
 	return nil
+}
+
+// podCommand returns the redis-server command arguments for a pod.
+// When DNS is enabled, --cluster-announce-ip is set to the pod name so that
+// other nodes can reach it via DNS resolution. Otherwise it is omitted so
+// that Redis uses its own detected IP.
+func (c *K8sNodeManager) podCommand(containerPort uint16, podName string) []string {
+	cmd := []string{
+		"redis-server",
+		"/data/redis/config/redis.conf",
+		"--port", strconv.Itoa(int(containerPort)),
+		"--cluster-announce-bus-port", strconv.Itoa(int(containerPort + 10000)),
+	}
+	if c.config.DNSEnabled() {
+		cmd = append(cmd, "--cluster-announce-ip", podName)
+	}
+	return cmd
 }
 
 func (c *K8sNodeManager) createServiceForPod(ctx context.Context, pod *corev1.Pod, clusterName string) (uint16, error) {
@@ -438,10 +454,12 @@ func (c *K8sNodeManager) ListPodsByCluster(ctx context.Context, clusterName stri
 			HostIP:      "127.0.0.1",
 			HostPort:    hostPort,
 			ConIp:       pod.Status.PodIP,
-			Hostname:    pod.Name,
 			ID:          string(pod.UID),
 			ConPort:     c.config.RedisContainerPort,
 			ClusterName: pod.Labels["cluster-name"],
+		}
+		if c.config.DNSEnabled() {
+			node.Hostname = pod.Name
 		}
 		c.Nodes = append(c.Nodes, &node)
 		c.IDToNode[node.ID] = &node
