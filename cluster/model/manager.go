@@ -5,23 +5,25 @@ import (
 	"fmt"
 	"sort"
 
+	"redisClusterManager/cluster/data"
+
 	"github.com/go-redis/redis/v8"
 )
 
-type ByIP []*ClusterNode
+type ByIP []*data.ClusterNode
 
 func (a ByIP) Len() int           { return len(a) }
 func (a ByIP) Less(i, j int) bool { return a[i].IP < a[j].IP }
 func (a ByIP) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 
 type ClusterManager struct {
-	EmptyMasters      []*ClusterNode
-	IDToClusterNode   map[string]*ClusterNode
+	EmptyMasters      []*data.ClusterNode
+	IDToClusterNode   map[string]*data.ClusterNode
 	IPToClusterID     map[string]string
 	AlreadyMeetNode   map[string]bool
 	MasterToSlave     map[string][]string
 	AlreadySetCluster map[string]bool
-	ClusterNodeList   []*ClusterNode
+	ClusterNodeList   []*data.ClusterNode
 	MasterIDs         []string
 	MasterSet         map[string]bool
 	nodeManager       PodManager
@@ -31,13 +33,13 @@ type ClusterManager struct {
 
 func NewClusterManager(nodesPerShard int, nodeManager PodManager) *ClusterManager {
 	clusterManager := ClusterManager{
-		EmptyMasters:      make([]*ClusterNode, 0),
-		IDToClusterNode:   make(map[string]*ClusterNode),
+		EmptyMasters:      make([]*data.ClusterNode, 0),
+		IDToClusterNode:   make(map[string]*data.ClusterNode),
 		IPToClusterID:     make(map[string]string),
 		AlreadyMeetNode:   make(map[string]bool),
 		MasterToSlave:     make(map[string][]string),
 		AlreadySetCluster: make(map[string]bool),
-		ClusterNodeList:   make([]*ClusterNode, 0),
+		ClusterNodeList:   make([]*data.ClusterNode, 0),
 		MasterIDs:         make([]string, 0),
 		MasterSet:         make(map[string]bool),
 		nodeManager:       nodeManager,
@@ -159,7 +161,7 @@ func (c *ClusterManager) AddShards(ctx context.Context, shardCount int, clusterN
 	if err != nil {
 		return err
 	}
-	c.EmptyMasters = make([]*ClusterNode, 0)
+	c.EmptyMasters = make([]*data.ClusterNode, 0)
 	newNodeStartIndex := c.nodeManager.GetNodeCount() - sum
 	var masterToSlave = make(map[string][]string)
 	masterToSlave = c.MasterToSlave
@@ -218,6 +220,6 @@ func (c *ClusterManager) SortInfo() {
 	c.sortClusterNodesByIP(c.EmptyMasters)
 }
 
-func (c *ClusterManager) sortClusterNodesByIP(nodes []*ClusterNode) {
+func (c *ClusterManager) sortClusterNodesByIP(nodes []*data.ClusterNode) {
 	sort.Sort(ByIP(nodes))
 }

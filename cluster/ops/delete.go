@@ -8,7 +8,7 @@ import (
 	"redisClusterManager/cluster/backend"
 	"redisClusterManager/cluster/config"
 	"redisClusterManager/cluster/pipeline"
-	"redisClusterManager/cluster/model/store"
+	"redisClusterManager/cluster/data/store"
 	"redisClusterManager/cluster/utils"
 )
 

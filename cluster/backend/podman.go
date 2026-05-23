@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"redisClusterManager/cluster/config"
-	"redisClusterManager/cluster/model"
+	"redisClusterManager/cluster/data"
 )
 
 type PodmanNodeManager struct {
@@ -23,17 +23,17 @@ func NewPodmanNodeManager(cfg *config.RuntimeConfig) *PodmanNodeManager {
 	return &PodmanNodeManager{
 		config: cfg,
 		base: baseNodeManager{
-			IPToNode:   make(map[string]*model.RuntimeNode),
-			HostToNode: make(map[string]*model.RuntimeNode),
-			IDToNode:   make(map[string]*model.RuntimeNode),
+			IPToNode:   make(map[string]*data.RuntimeNode),
+			HostToNode: make(map[string]*data.RuntimeNode),
+			IDToNode:   make(map[string]*data.RuntimeNode),
 		},
 	}
 }
 
-func (c *PodmanNodeManager) AddRuntimeNode(node *model.RuntimeNode) {
+func (c *PodmanNodeManager) AddRuntimeNode(node *data.RuntimeNode) {
 	c.base.addNode(node)
 	if node.Address.ClientAddr == "" {
-		node.Address = model.NodeAddress{
+		node.Address = data.NodeAddress{
 			ClusterAddr: fmt.Sprintf("%s:%d", node.ConIp, node.ConPort),
 			ClientAddr:  fmt.Sprintf("%s:%d", node.HostIP, node.HostPort),
 		}
@@ -41,9 +41,9 @@ func (c *PodmanNodeManager) AddRuntimeNode(node *model.RuntimeNode) {
 }
 
 func (c *PodmanNodeManager) HasCluster(clusterName string) bool   { return c.base.hasCluster(clusterName) }
-func (c *PodmanNodeManager) GetNodes() []*model.RuntimeNode        { return c.base.getNodes() }
-func (c *PodmanNodeManager) GetNodeByIP(ip string) *model.RuntimeNode { return c.base.getNodeByIP(ip) }
-func (c *PodmanNodeManager) GetNodeByHost(host string) *model.RuntimeNode { return c.base.getNodeByHost(host) }
+func (c *PodmanNodeManager) GetNodes() []*data.RuntimeNode        { return c.base.getNodes() }
+func (c *PodmanNodeManager) GetNodeByIP(ip string) *data.RuntimeNode { return c.base.getNodeByIP(ip) }
+func (c *PodmanNodeManager) GetNodeByHost(host string) *data.RuntimeNode { return c.base.getNodeByHost(host) }
 func (c *PodmanNodeManager) GetNodeCount() int                     { return c.base.getNodeCount() }
 
 func (c *PodmanNodeManager) CountByCluster(clusterName string) int { return c.base.countByCluster(clusterName) }
@@ -127,7 +127,7 @@ func (c *PodmanNodeManager) CreatePods(ctx context.Context, nodeNum int, cluster
 
 		fmt.Printf("Container %s is running with IP %s (host port: %d)\n", containerName, containerIP, hostPort)
 
-		node := model.RuntimeNode{
+		node := data.RuntimeNode{
 			Name:        containerName,
 			HostIP:      "127.0.0.1",
 			HostPort:    hostPort,
@@ -228,7 +228,7 @@ func (c *PodmanNodeManager) ListPodsByCluster(ctx context.Context, clusterName s
 			continue
 		}
 
-		node := &model.RuntimeNode{
+		node := &data.RuntimeNode{
 			Name:        name,
 			HostIP:      "127.0.0.1",
 			HostPort:    hostPort,

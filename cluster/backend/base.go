@@ -1,18 +1,18 @@
 package backend
 
-import "redisClusterManager/cluster/model"
+import "redisClusterManager/cluster/data"
 
 // baseNodeManager holds shared node-tracking state used by both PodmanNodeManager
 // and ContainerdNodeManager.
 type baseNodeManager struct {
-	IPToNode   map[string]*model.RuntimeNode
-	HostToNode map[string]*model.RuntimeNode
-	IDToNode   map[string]*model.RuntimeNode
-	Nodes      []*model.RuntimeNode
+	IPToNode   map[string]*data.RuntimeNode
+	HostToNode map[string]*data.RuntimeNode
+	IDToNode   map[string]*data.RuntimeNode
+	Nodes      []*data.RuntimeNode
 	Num        int
 }
 
-func (b *baseNodeManager) addNode(node *model.RuntimeNode) {
+func (b *baseNodeManager) addNode(node *data.RuntimeNode) {
 	b.Nodes = append(b.Nodes, node)
 	b.Num++
 	b.IPToNode[node.ConIp] = node
@@ -31,11 +31,11 @@ func (b *baseNodeManager) hasCluster(clusterName string) bool {
 	return false
 }
 
-func (b *baseNodeManager) getNodes() []*model.RuntimeNode { return b.Nodes }
+func (b *baseNodeManager) getNodes() []*data.RuntimeNode { return b.Nodes }
 
-func (b *baseNodeManager) getNodeByIP(ip string) *model.RuntimeNode { return b.IPToNode[ip] }
+func (b *baseNodeManager) getNodeByIP(ip string) *data.RuntimeNode { return b.IPToNode[ip] }
 
-func (b *baseNodeManager) getNodeByHost(host string) *model.RuntimeNode {
+func (b *baseNodeManager) getNodeByHost(host string) *data.RuntimeNode {
 	if b.HostToNode != nil {
 		if node, ok := b.HostToNode[host]; ok {
 			return node
@@ -57,9 +57,9 @@ func (b *baseNodeManager) countByCluster(name string) int {
 }
 
 func (b *baseNodeManager) resetMaps() {
-	b.IPToNode = make(map[string]*model.RuntimeNode)
-	b.HostToNode = make(map[string]*model.RuntimeNode)
-	b.IDToNode = make(map[string]*model.RuntimeNode)
+	b.IPToNode = make(map[string]*data.RuntimeNode)
+	b.HostToNode = make(map[string]*data.RuntimeNode)
+	b.IDToNode = make(map[string]*data.RuntimeNode)
 	b.Nodes = nil
 	b.Num = 0
 }

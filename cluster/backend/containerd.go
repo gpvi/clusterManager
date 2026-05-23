@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"redisClusterManager/cluster/config"
+	"redisClusterManager/cluster/data"
 	"redisClusterManager/cluster/model"
 
 	"github.com/containerd/containerd"
@@ -35,17 +36,17 @@ func NewContainerdNodeManager(cfg *config.RuntimeConfig) (*ContainerdNodeManager
 		client: client,
 		config: cfg,
 		base: baseNodeManager{
-			IPToNode:   make(map[string]*model.RuntimeNode),
-			HostToNode: make(map[string]*model.RuntimeNode),
-			IDToNode:   make(map[string]*model.RuntimeNode),
+			IPToNode:   make(map[string]*data.RuntimeNode),
+			HostToNode: make(map[string]*data.RuntimeNode),
+			IDToNode:   make(map[string]*data.RuntimeNode),
 		},
 	}, nil
 }
 
-func (c *ContainerdNodeManager) AddRuntimeNode(node *model.RuntimeNode) {
+func (c *ContainerdNodeManager) AddRuntimeNode(node *data.RuntimeNode) {
 	c.base.addNode(node)
 	if node.Address.ClientAddr == "" {
-		node.Address = model.NodeAddress{
+		node.Address = data.NodeAddress{
 			ClusterAddr: fmt.Sprintf("%s:%d", node.ConIp, node.ConPort),
 			ClientAddr:  fmt.Sprintf("%s:%d", node.HostIP, node.HostPort),
 		}
@@ -53,9 +54,9 @@ func (c *ContainerdNodeManager) AddRuntimeNode(node *model.RuntimeNode) {
 }
 
 func (c *ContainerdNodeManager) HasCluster(clusterName string) bool   { return c.base.hasCluster(clusterName) }
-func (c *ContainerdNodeManager) GetNodes() []*model.RuntimeNode        { return c.base.getNodes() }
-func (c *ContainerdNodeManager) GetNodeByIP(ip string) *model.RuntimeNode { return c.base.getNodeByIP(ip) }
-func (c *ContainerdNodeManager) GetNodeByHost(host string) *model.RuntimeNode { return c.base.getNodeByHost(host) }
+func (c *ContainerdNodeManager) GetNodes() []*data.RuntimeNode        { return c.base.getNodes() }
+func (c *ContainerdNodeManager) GetNodeByIP(ip string) *data.RuntimeNode { return c.base.getNodeByIP(ip) }
+func (c *ContainerdNodeManager) GetNodeByHost(host string) *data.RuntimeNode { return c.base.getNodeByHost(host) }
 func (c *ContainerdNodeManager) GetNodeCount() int                     { return c.base.getNodeCount() }
 
 func (c *ContainerdNodeManager) CountByCluster(clusterName string) int { return c.base.countByCluster(clusterName) }
@@ -148,7 +149,7 @@ func (c *ContainerdNodeManager) CreatePods(ctx context.Context, nodeNum int, clu
 		containerID := container.ID()
 		fmt.Printf("Container started: %s (%s)\n", containerName, containerID[:12])
 
-		node := model.RuntimeNode{
+		node := data.RuntimeNode{
 			Name:        containerName,
 			HostIP:      "127.0.0.1",
 			HostPort:    uint16(port),
@@ -260,7 +261,7 @@ func (c *ContainerdNodeManager) ListPodsByCluster(ctx context.Context, clusterNa
 		nodeIndex, _ := strconv.Atoi(nodeIndexStr)
 		port := int(c.config.RedisContainerPort) + (nodeIndex - 1)
 
-		node := &model.RuntimeNode{
+		node := &data.RuntimeNode{
 			Name:        container.ID(),
 			HostIP:      "127.0.0.1",
 			HostPort:    uint16(port),

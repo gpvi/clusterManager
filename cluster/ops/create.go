@@ -9,9 +9,10 @@ import (
 
 	"redisClusterManager/cluster/backend"
 	"redisClusterManager/cluster/config"
+	"redisClusterManager/cluster/data"
 	"redisClusterManager/cluster/model"
 	"redisClusterManager/cluster/pipeline"
-	"redisClusterManager/cluster/model/store"
+	"redisClusterManager/cluster/data/store"
 	"redisClusterManager/cluster/utils"
 )
 
@@ -150,7 +151,7 @@ func CreateClusterAction(ctx context.Context, cfg *config.RuntimeConfig, shardCo
 				return err
 			}
 			defer s.Close()
-			s.UpsertCluster(store.ClusterRecord{
+			s.UpsertCluster(data.ClusterRecord{
 				Name: clusterName, Backend: cfg.Backend, Shards: shardCount,
 				NodesPerShard: nodesPerShard, RedisPort: int(cfg.RedisContainerPort),
 				Image: cfg.ImageName, Status: "ready",
@@ -160,7 +161,7 @@ func CreateClusterAction(ctx context.Context, cfg *config.RuntimeConfig, shardCo
 					continue
 				}
 				nodeIdx, _ := strconv.Atoi(strings.TrimPrefix(node.Name, clusterName+"-redis-"))
-				s.UpsertContainer(store.ContainerRecord{
+				s.UpsertContainer(data.ContainerRecord{
 					ClusterName: clusterName, Name: node.Name, ContainerID: node.ID,
 					HostIP: node.HostIP, HostPort: int(node.HostPort),
 					ContainerIP: node.ConIp, ContainerPort: int(node.ConPort),

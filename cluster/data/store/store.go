@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"redisClusterManager/cluster/data"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -109,19 +111,7 @@ func (s *Store) migrate() error {
 // Cluster CRUD
 // ---------------------------------------------------------------------------
 
-type ClusterRecord struct {
-	Name          string
-	Backend       string
-	Shards        int
-	NodesPerShard int
-	RedisPort     int
-	Image         string
-	Status        string
-	CreatedAt     string
-	UpdatedAt     string
-}
-
-func (s *Store) UpsertCluster(c ClusterRecord) error {
+func (s *Store) UpsertCluster(c data.ClusterRecord) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	if c.CreatedAt == "" {
 		c.CreatedAt = now
@@ -143,8 +133,8 @@ func (s *Store) UpdateClusterStatus(name, status string) error {
 	return err
 }
 
-func (s *Store) GetCluster(name string) (*ClusterRecord, error) {
-	r := &ClusterRecord{}
+func (s *Store) GetCluster(name string) (*data.ClusterRecord, error) {
+	r := &data.ClusterRecord{}
 	err := s.db.QueryRow(
 		"SELECT name, backend, shards, nodes_per_shard, redis_port, image, status, created_at, updated_at FROM clusters WHERE name=?",
 		name,
@@ -155,15 +145,15 @@ func (s *Store) GetCluster(name string) (*ClusterRecord, error) {
 	return r, err
 }
 
-func (s *Store) ListClusters() ([]ClusterRecord, error) {
+func (s *Store) ListClusters() ([]data.ClusterRecord, error) {
 	rows, err := s.db.Query("SELECT name, backend, shards, nodes_per_shard, redis_port, image, status, created_at, updated_at FROM clusters ORDER BY name")
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var res []ClusterRecord
+	var res []data.ClusterRecord
 	for rows.Next() {
-		var r ClusterRecord
+		var r data.ClusterRecord
 		if err := rows.Scan(&r.Name, &r.Backend, &r.Shards, &r.NodesPerShard, &r.RedisPort, &r.Image, &r.Status, &r.CreatedAt, &r.UpdatedAt); err != nil {
 			return nil, err
 		}
@@ -185,21 +175,7 @@ func (s *Store) DeleteCluster(name string) error {
 // Container CRUD
 // ---------------------------------------------------------------------------
 
-type ContainerRecord struct {
-	ClusterName   string
-	Name          string
-	ContainerID   string
-	HostIP        string
-	HostPort      int
-	ContainerIP   string
-	ContainerPort int
-	NodeIndex     int
-	Role          string
-	Status        string
-	Hostname      string
-}
-
-func (s *Store) UpsertContainer(c ContainerRecord) error {
+func (s *Store) UpsertContainer(c data.ContainerRecord) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := s.db.Exec(`
 		INSERT INTO containers (cluster_name, name, container_id, host_ip, host_port, container_ip, container_port, node_index, role, status, hostname, created_at)
@@ -214,7 +190,7 @@ func (s *Store) UpsertContainer(c ContainerRecord) error {
 	return err
 }
 
-func (s *Store) ListContainersByCluster(clusterName string) ([]ContainerRecord, error) {
+func (s *Store) ListContainersByCluster(clusterName string) ([]data.ContainerRecord, error) {
 	rows, err := s.db.Query(
 		"SELECT cluster_name, name, container_id, host_ip, host_port, container_ip, container_port, node_index, role, status, hostname FROM containers WHERE cluster_name=? ORDER BY node_index",
 		clusterName,
@@ -223,9 +199,9 @@ func (s *Store) ListContainersByCluster(clusterName string) ([]ContainerRecord, 
 		return nil, err
 	}
 	defer rows.Close()
-	var res []ContainerRecord
+	var res []data.ContainerRecord
 	for rows.Next() {
-		var c ContainerRecord
+		var c data.ContainerRecord
 		if err := rows.Scan(&c.ClusterName, &c.Name, &c.ContainerID, &c.HostIP, &c.HostPort, &c.ContainerIP, &c.ContainerPort, &c.NodeIndex, &c.Role, &c.Status, &c.Hostname); err != nil {
 			return nil, err
 		}

@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"redisClusterManager/cluster/data"
 	"redisClusterManager/cluster/utils"
 
 	"github.com/go-redis/redis/v8"
@@ -151,7 +152,7 @@ func (c *ClusterManager) MigrateSlotsToEmptyNode(ctx context.Context, clusterNam
 
 	for _, g := range groups {
 		// Shared source client per group.
-		sourceCli, err := CreateRedisClient(fmt.Sprintf("127.0.0.1:%d", g.fromHostPort))
+		sourceCli, err := data.CreateRedisClient(fmt.Sprintf("127.0.0.1:%d", g.fromHostPort))
 		if err != nil {
 			cancelProgress()
 			return fmt.Errorf("connect source %s fail: %w", g.fromIP, err)
@@ -209,7 +210,7 @@ func (c *ClusterManager) MigrateSlotsToEmptyNode(ctx context.Context, clusterNam
 // migrateSlotShared migrates a single slot using a shared source client.
 // Handles: empty slots (instant), small batches (single MIGRATE), large batches (chunked), and big keys (COPY mode).
 func migrateSlotShared(ctx context.Context, sourceCli *redis.Client, t slotTask) error {
-	destCli, err := CreateRedisClient(fmt.Sprintf("127.0.0.1:%d", t.destHostPort))
+	destCli, err := data.CreateRedisClient(fmt.Sprintf("127.0.0.1:%d", t.destHostPort))
 	if err != nil {
 		return fmt.Errorf("connect dest fail: %w", err)
 	}

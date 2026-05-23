@@ -8,9 +8,10 @@ import (
 
 	"redisClusterManager/cluster/backend"
 	"redisClusterManager/cluster/config"
+	"redisClusterManager/cluster/data"
 	"redisClusterManager/cluster/model"
 	"redisClusterManager/cluster/pipeline"
-	"redisClusterManager/cluster/model/store"
+	"redisClusterManager/cluster/data/store"
 	"redisClusterManager/cluster/utils"
 )
 
@@ -130,7 +131,7 @@ func ScaleClusterAction(ctx context.Context, cfg *config.RuntimeConfig, addition
 	p.Add(pipeline.Step{
 		Name: "set-roles",
 		Do: func(ctx context.Context) error {
-			cm.EmptyMasters = make([]*model.ClusterNode, 0)
+			cm.EmptyMasters = make([]*data.ClusterNode, 0)
 			sum := additionalShards * nodesPerShard
 			newStart := nodeManager.GetNodeCount() - sum
 			masterToSlave := make(map[string][]string)
@@ -190,7 +191,7 @@ func ScaleClusterAction(ctx context.Context, cfg *config.RuntimeConfig, addition
 			}
 			defer s.Close()
 			totalShards := len(cm.MasterIDs)
-			s.UpsertCluster(store.ClusterRecord{
+			s.UpsertCluster(data.ClusterRecord{
 				Name: clusterName, Backend: cfg.Backend, Shards: totalShards,
 				NodesPerShard: nodesPerShard, RedisPort: int(cfg.RedisContainerPort),
 				Image: cfg.ImageName, Status: "ready",
@@ -200,7 +201,7 @@ func ScaleClusterAction(ctx context.Context, cfg *config.RuntimeConfig, addition
 					continue
 				}
 				nodeIdx, _ := strconv.Atoi(strings.TrimPrefix(node.Name, clusterName+"-redis-"))
-				s.UpsertContainer(store.ContainerRecord{
+				s.UpsertContainer(data.ContainerRecord{
 					ClusterName: clusterName, Name: node.Name, ContainerID: node.ID,
 					HostIP: node.HostIP, HostPort: int(node.HostPort),
 					ContainerIP: node.ConIp, ContainerPort: int(node.ConPort),

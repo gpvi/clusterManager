@@ -1,6 +1,10 @@
 package model
 
-import "context"
+import (
+	"context"
+
+	"redisClusterManager/cluster/data"
+)
 
 // TotalSlots is the total number of slots in a Redis cluster.
 const TotalSlots int = 16384
@@ -18,8 +22,8 @@ type PodManager interface {
 	DeleteResources(ctx context.Context, clusterName string) error
 	HasCluster(clusterName string) bool
 	CountByCluster(clusterName string) int
-	GetNodes() []*RuntimeNode
-	GetNodeByIP(ip string) *RuntimeNode
-	GetNodeByHost(host string) *RuntimeNode
+	GetNodes() []*data.RuntimeNode
+	GetNodeByIP(ip string) *data.RuntimeNode
+	GetNodeByHost(host string) *data.RuntimeNode
 	GetNodeCount() int
 }

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"redisClusterManager/cluster/data"
 	"redisClusterManager/cluster/utils"
 
 	"github.com/go-redis/redis/v8"
@@ -124,7 +125,7 @@ func (c *ClusterManager) SetNodeAsSlave(ctx context.Context, masterIP string, sl
 	if slaveNode == nil {
 		return fmt.Errorf("slave node not found for IP %s", slaveAddr)
 	}
-	cli, err := CreateRedisClient(slaveNode.ClientConnAddr())
+	cli, err := data.CreateRedisClient(slaveNode.ClientConnAddr())
 	if err != nil {
 		return fmt.Errorf("failed to create Redis client: %w", err)
 	}
@@ -182,7 +183,7 @@ func (c *ClusterManager) AllocateSlots(ctx context.Context, clusterName string) 
 		if port == nil {
 			return fmt.Errorf("runtime node not found for IP %s", masterNode.IP)
 		}
-		cliClusterMaster, err := CreateRedisClient(port.ClientConnAddr())
+		cliClusterMaster, err := data.CreateRedisClient(port.ClientConnAddr())
 		if err != nil {
 			return fmt.Errorf("failed to create Redis client: %w", err)
 		}
@@ -204,7 +205,7 @@ func (c *ClusterManager) AllocateSlots(ctx context.Context, clusterName string) 
 }
 
 // UpdateAfterMeet refreshes the cluster node map after a MEET operation.
-func (c *ClusterManager) UpdateAfterMeet(ctx context.Context, LoginNode *RuntimeNode, clusterName string) error {
+func (c *ClusterManager) UpdateAfterMeet(ctx context.Context, LoginNode *data.RuntimeNode, clusterName string) error {
 	var err error
 	if c.nodeManager.GetNodeCount() == 0 {
 		return nil
@@ -231,7 +232,7 @@ func (c *ClusterManager) UpdateAfterMeet(ctx context.Context, LoginNode *Runtime
 }
 
 // UpdateAfterSetNodeRole refreshes the master/slave topology after role changes.
-func (c *ClusterManager) UpdateAfterSetNodeRole(ctx context.Context, LoginNode *RuntimeNode, clusterName string) error {
+func (c *ClusterManager) UpdateAfterSetNodeRole(ctx context.Context, LoginNode *data.RuntimeNode, clusterName string) error {
 	var err error
 	c.MasterToSlave = make(map[string][]string)
 	c.MasterIDs = make([]string, 0)
@@ -248,8 +249,8 @@ func (c *ClusterManager) UpdateAfterSetNodeRole(ctx context.Context, LoginNode *
 		fmt.Println("the num of cluster nodes is 0")
 		return nil
 	}
-	var masters []*ClusterNode
-	var slaves []*ClusterNode
+	var masters []*data.ClusterNode
+	var slaves []*data.ClusterNode
 
 	for _, node := range nodes {
 		if node.NodeType == "master" {
@@ -281,13 +282,13 @@ func (c *ClusterManager) UpdateAfterSetNodeRole(ctx context.Context, LoginNode *
 }
 
 // UpdateSlots refreshes the slot allocation info for all master nodes.
-func (c *ClusterManager) UpdateSlots(ctx context.Context, LoginNode *RuntimeNode, clusterName string) error {
+func (c *ClusterManager) UpdateSlots(ctx context.Context, LoginNode *data.RuntimeNode, clusterName string) error {
 	var err error
 	if c.nodeManager.GetNodeCount() == 0 {
 		return nil
 	}
 
-	c.EmptyMasters = make([]*ClusterNode, 0)
+	c.EmptyMasters = make([]*data.ClusterNode, 0)
 
 	nodes, err := c.GetClusterNodes(ctx, LoginNode, clusterName)
 	if err != nil {
@@ -298,7 +299,7 @@ func (c *ClusterManager) UpdateSlots(ctx context.Context, LoginNode *RuntimeNode
 		return nil
 	}
 	for _, node := range nodes {
-		if node.NodeType == Master {
+		if node.NodeType == data.Master {
 			if _, ok := c.IDToClusterNode[node.ID]; ok {
 				c.IDToClusterNode[node.ID].SlotsNum = c.calculateSlots(node.Slots)
 				if len(node.Slots) == 0 {
@@ -316,7 +317,7 @@ func (c *ClusterManager) PrintClusterNodesInfo(ctx context.Context) error {
 		return fmt.Errorf("no nodes available: %w", ErrNoNodesAvailable)
 	}
 	time.Sleep(time.Duration(len(c.ClusterNodeList)/3) * time.Second)
-	client, err := CreateRedisClient(c.nodeManager.GetNodes()[0].ClientConnAddr())
+	client, err := data.CreateRedisClient(c.nodeManager.GetNodes()[0].ClientConnAddr())
 	if err != nil {
 		return fmt.Errorf("failed to create Redis client: %w", err)
 	}
@@ -344,7 +345,7 @@ func (c *ClusterManager) PrintClusterNodesInfo(ctx context.Context) error {
 }
 
 // calculateSlots returns the total number of slots in a slot range slice.
-func (c *ClusterManager) calculateSlots(slots []SlotRange) int {
+func (c *ClusterManager) calculateSlots(slots []data.SlotRange) int {
 	totalSlots := 0
 	for _, slot := range slots {
 		totalSlots += slot.End - slot.Start + 1
