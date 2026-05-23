@@ -17,7 +17,7 @@
 | Module | `redisClusterManager` (Go 1.25) |
 | Purpose | Redis Cluster orchestration (create, scale, delete) |
 | Key Features | Multi-backend (K8s/Podman/Containerd), CLI + Operator + gRPC server, SQLite persistence, slot migration, Python AI agent |
-| Entry Points | `main.go` (CLI), `cmd/operator/main.go` (K8s Operator), `cmd/clusterd/main.go` (gRPC server) |
+| Entry Points | `main.go` (CLI), `cluster/cmd/operator/main.go` (K8s Operator), `cluster/cmd/clusterd/main.go` (gRPC server) |
 | Transport | gRPC (clusterd), Cobra CLI |
 
 ### Dependency Conflicts to Resolve
@@ -98,90 +98,53 @@ clusterManager/                    # repo root (renamed or kept as-is)
 ├── Makefile
 ├── README.md
 │
-├── cmd/                           # subcommands
-│   ├── root.go                    # root command with shared flags
-│   ├── create.go                  # cluster create
-│   ├── scale.go                   # cluster scale
-│   ├── delete.go                  # cluster delete
-│   ├── cache.go                   # cache node subcommand (NEW)
-│   ├── operator/                  # K8s operator entry point
-│   │   └── main.go
-│   └── clusterd/                  # gRPC server entry point
-│       └── main.go
-│
-├── model/                         # core business logic (existing)
-│   ├── interfaces.go              # PodManager interface
-│   ├── factory.go                 # backend factory
-│   ├── config.go                  # unified config (extended)
-│   ├── cluster_manager.go         # Redis cluster orchestrator
-│   ├── cluster_node.go            # cluster domain types
-│   ├── k8s_manager.go             # K8s backend
-│   ├── podman_manager.go          # Podman backend
-│   ├── containerd_manager.go      # Containerd backend
-│   ├── k8s_client.go              # K8s client helpers
-│   ├── store.go                   # SQLite persistence
-│   └── errors.go                  # sentinel errors
-│
-├── cache/                         # GeeCache moved here (NEW)
-│   ├── cache.go                   # thread-safe LRU wrapper
-│   ├── geecache.go                # Group (cache namespace)
-│   ├── byteview.go                # immutable byte slice
-│   ├── hotkey.go                  # hot key detection & replication
-│   ├── ratelimit.go               # DB load rate limiter
-│   ├── http.go                    # health check + API gateway
-│   ├── peer.go                    # PeerPicker / PeerGetter interfaces
-│   ├── lru/
-│   │   └── lru.go                 # LRU eviction (container/list)
-│   ├── consistenthash/
-│   │   └── consistenthash.go      # consistent hash ring
-│   ├── singleflight/
-│   │   └── singleflight.go        # request coalescing
-│   ├── peer/
-│   │   ├── peer.go                # transport interfaces
-│   │   ├── registry.go            # memberlist-based peer registry
-│   │   ├── grpc_server.go         # gRPC cache server
-│   │   ├── grpc_client.go         # gRPC cache client
-│   │   ├── httpgetter.go          # legacy HTTP peer
-│   │   └── tls.go                 # TLS/mTLS config
-│   └── conf/
-│       └── config.go              # cache-specific config
-│
-├── proto/                         # protobuf definitions (extended)
-│   ├── rediscluster.proto         # clusterd gRPC service
-│   ├── cache.proto                # cache peer gRPC service (moved)
-│   ├── rediscluster.pb.go
-│   ├── rediscluster_grpc.pb.go
-│   ├── cache.pb.go
-│   └── cache_grpc.pb.go
-│
-├── api/v1/                        # K8s CRD types
-│   └── rediscluster_types.go
-│
-├── controller/                    # K8s operator reconcile loop
-│   └── rediscluster_controller.go
-│
-├── agent/                         # Python AI agent
-│   └── src/
-│
-├── config/                        # config files
-│   ├── conf.yaml                  # default config (extended)
-│   ├── crd/
-│   ├── deploy/
-│   └── examples/
-│
-├── docs/                          # documentation
-│   ├── DESIGN.md
-│   ├── INTEGRATION_DESIGN.md      # this file
-│   └── ...
-│
-├── utils/                         # shared utilities
-│   └── utils.go
-│
-├── setup/                         # Redis config templates
-│   └── redis/config/redis.conf
-│
-└── scripts/                       # build & test scripts
-    ├── build.ps1
+├── cluster/
+│   ├── cmd/                           # subcommands
+│   │   ├── root.go                    # root command with shared flags
+│   │   ├── create.go                  # cluster create
+│   │   ├── scale.go                   # cluster scale
+│   │   ├── delete.go                  # cluster delete
+│   │   ├── cache.go                   # cache node subcommand (NEW)
+│   │   ├── operator/                  # K8s operator entry point
+│   │   │   └── main.go
+│   │   └── clusterd/                  # gRPC server entry point
+│   │       └── main.go
+│   │
+│   ├── model/                         # core business logic (existing)
+│   │   ├── interfaces.go              # PodManager interface
+│   │   ├── factory.go                 # backend factory
+│   │   ├── config.go                  # unified config (extended)
+│   │   ├── cluster_manager.go         # Redis cluster orchestrator
+│   │   ├── cluster_node.go            # cluster domain types
+│   │   ├── k8s_manager.go             # K8s backend
+│   │   ├── podman_manager.go          # Podman backend
+│   │   ├── containerd_manager.go      # Containerd backend
+│   │   ├── k8s_client.go              # K8s client helpers
+│   │   ├── store.go                   # SQLite persistence
+│   │   └── errors.go                  # sentinel errors
+│   │
+│   ├── proto/                         # protobuf definitions (extended)
+│   │   ├── rediscluster.proto         # clusterd gRPC service
+│   │   ├── cache.proto                # cache peer gRPC service (moved)
+│   │   ├── rediscluster.pb.go
+│   │   ├── rediscluster_grpc.pb.go
+│   │   ├── cache.pb.go
+│   │   └── cache_grpc.pb.go
+│   │
+│   ├── api/v1/                        # K8s CRD types
+│   │   └── rediscluster_types.go
+│   │
+│   ├── controller/                    # K8s operator reconcile loop
+│   │   └── rediscluster_controller.go
+│   │
+│   ├── config/                        # config files
+│   │   ├── conf.yaml                  # default config (extended)
+│   │   ├── crd/
+│   │   ├── deploy/
+│   │   └── examples/
+│   │
+│   └── utils/                         # shared utilities
+│       └── utils.go
     └── test.ps1
 ```
 
@@ -235,10 +198,10 @@ redis-data-platform
 └── clusterd     # Run as gRPC server (existing)
 ```
 
-### 5.2 `cmd/cache.go` (New Subcommand)
+### 5.2 `cluster/cmd/cache.go` (New Subcommand)
 
 ```go
-// cmd/cache.go
+// cluster/cmd/cache.go
 package cmd
 
 import (
@@ -295,10 +258,10 @@ func (g *RedisGetter) Get(ctx context.Context, key string) ([]byte, error) {
 
 ### 6.2 Unified Configuration
 
-Extend `model/config.go` with cache section:
+Extend `cluster/model/config.go` with cache section:
 
 ```yaml
-# config/conf.yaml (extended)
+# cluster/config/conf.yaml (extended)
 backend: k8s
 namespace: default
 image: redis:7-alpine
@@ -358,7 +321,7 @@ When cache nodes and clusterd nodes co-exist in K8s, both use the same memberlis
 When clusterManager performs slot migration (scale up/down), it can trigger cache invalidation for affected key ranges:
 
 ```go
-// model/cluster_manager.go
+// cluster/model/cluster_manager.go
 func (cm *ClusterManager) MigrateSlot(slot int, from, to string) error {
     // ... existing migration logic ...
 
@@ -376,15 +339,15 @@ func (cm *ClusterManager) MigrateSlot(slot int, from, to string) error {
 
 ### Phase 1: Module Merge (1-2 days)
 1. Copy `GeeCache/src/` → `clusterManager/cache/`
-2. Copy `GeeCache/geecachepb/` → `clusterManager/proto/`
+2. Copy `GeeCache/geecachepb/` → `clusterManager/cluster/proto/`
 3. Merge `go.mod` dependencies, resolve conflicts
 4. Fix import paths throughout cache package
 5. `go build ./...` succeeds
 
 ### Phase 2: Unified CLI (1 day)
-1. Add `cmd/cache.go` subcommand
+1. Add `cluster/cmd/cache.go` subcommand
 2. Extract `main/main.go` → `cache/run.go` as library function
-3. Extend `model/config.go` with `CacheConfig` struct
+3. Extend `cluster/model/config.go` with `CacheConfig` struct
 4. Wire up config loading
 
 ### Phase 3: Redis Getter Integration (1 day)

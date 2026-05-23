@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"redisClusterManager/utils"
+	"redisClusterManager/cluster/utils"
 )
 
 type RedisClusterConfig struct {

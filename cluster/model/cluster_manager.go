@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"redisClusterManager/utils"
+	"redisClusterManager/cluster/utils"
 	"sort"
 	"sync"
 	"sync/atomic"

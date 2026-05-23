@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"fmt"
-	"redisClusterManager/model"
+	"redisClusterManager/cluster/model"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"

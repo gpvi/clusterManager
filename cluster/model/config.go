@@ -5,7 +5,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"redisClusterManager/utils"
+	"redisClusterManager/cluster/utils"
 	"runtime"
 	"strconv"
 	"strings"
@@ -445,6 +445,6 @@ func (cfg *RuntimeConfig) BuildHostname(clusterName string, index int) string {
 	name := cfg.DNS.NamingTemplate
 	name = strings.ReplaceAll(name, "{{.ClusterName}}", clusterName)
 	name = strings.ReplaceAll(name, "{{.Index}}", strconv.Itoa(index))
-	name = strings.ReplaceAll(name, "{{.Namespace}}", cfg.KubeNamespace)
+	name = strings.ReplaceAll(name, "{{.Namespace}}", "default")
 	return name
 }

@@ -5,7 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"redisClusterManager/cache"
-	"redisClusterManager/model"
+	"redisClusterManager/cluster/model"
 	"syscall"
 
 	"github.com/spf13/cobra"

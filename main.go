@@ -2,8 +2,8 @@ package main
 
 import (
 	"log"
-	"redisClusterManager/cmd"
-	"redisClusterManager/model"
+	"redisClusterManager/cluster/cmd"
+	"redisClusterManager/cluster/model"
 )
 
 func main() {

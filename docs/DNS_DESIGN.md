@@ -108,7 +108,7 @@ func (m *K8sNodeManager) GetNodeByHost(host string) *RuntimeNode {
 #### 配置扩展
 
 ```yaml
-# config/conf.yaml
+# cluster/config/conf.yaml
 dns:
   enabled: true
   domain: "svc.cluster.local"     # K8s DNS domain
@@ -239,11 +239,11 @@ cache:
 
 | 任务 | 文件 |
 |------|------|
-| 添加 `Hostname` 字段到 `RuntimeNode` | `model/k8s_manager.go` |
+| 添加 `Hostname` 字段到 `RuntimeNode` | `cluster/model/k8s_manager.go` |
 | 添加 `HostToNode` 索引 + `GetNodeByHost()` | 三个后端文件 |
-| 添加 `ClusterMeetAddr()` 方法 | `model/k8s_manager.go` |
-| 添加 `DNSConfig` 到 `Config` / `RuntimeConfig` | `model/config.go`, `config/conf.yaml` |
-| 更新 `Store` (SQLite) 持久化 Hostname | `model/store.go` |
+| 添加 `ClusterMeetAddr()` 方法 | `cluster/model/k8s_manager.go` |
+| 添加 `DNSConfig` 到 `Config` / `RuntimeConfig` | `cluster/model/config.go`, `cluster/config/conf.yaml` |
+| 更新 `Store` (SQLite) 持久化 Hostname | `cluster/model/store.go` |
 
 ### Phase 2: 启动参数 (1 天)
 
@@ -251,17 +251,17 @@ cache:
 |------|------|
 | 修改 `redis.conf` 模板 启用 `cluster-announce-ip` | `setup/redis/config/redis.conf` |
 | 各后端 `CreatePods` 传入 `--cluster-announce-ip` | 三个后端文件 |
-| K8s: 设置 `hostname` + `subdomain` | `model/k8s_manager.go` |
-| Podman: 设置固定容器名 | `model/podman_manager.go` |
+| K8s: 设置 `hostname` + `subdomain` | `cluster/model/k8s_manager.go` |
+| Podman: 设置固定容器名 | `cluster/model/podman_manager.go` |
 
 ### Phase 3: CLUSTER MEET 适配 (1 天)
 
 | 任务 | 文件 |
 |------|------|
-| `MeetNodes` 使用 `ClusterMeetAddr()` | `model/cluster_manager.go` |
-| `parseClusterNodeLines` 兼容 hostname | `model/cluster_node.go` |
-| 全局替换 `GetNodeByIP` → `GetNodeByHost` (8 处) | `model/cluster_manager.go` 等 |
-| `clusterFilter` 改用 `GetNodeByHost` | `model/cluster_manager.go` |
+| `MeetNodes` 使用 `ClusterMeetAddr()` | `cluster/model/cluster_manager.go` |
+| `parseClusterNodeLines` 兼容 hostname | `cluster/model/cluster_node.go` |
+| 全局替换 `GetNodeByIP` → `GetNodeByHost` (8 处) | `cluster/model/cluster_manager.go` 等 |
+| `clusterFilter` 改用 `GetNodeByHost` | `cluster/model/cluster_manager.go` |
 
 ### Phase 4: 测试 & 验证 (1 天)
 

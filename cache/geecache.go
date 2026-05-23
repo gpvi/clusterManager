@@ -7,7 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	pb "redisClusterManager/proto"
+	pb "redisClusterManager/cluster/proto"
 	"redisClusterManager/cache/peer"
 	"redisClusterManager/cache/singleflight"
 )

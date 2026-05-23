@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"redisClusterManager/utils"
+	"redisClusterManager/cluster/utils"
 )
 
 func DeleteAllContainers(ctx context.Context, cfg *RuntimeConfig, clusterName string) error {

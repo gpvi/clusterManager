@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"redisClusterManager/utils"
+	"redisClusterManager/cluster/utils"
 )
 
 func ScaleClusterAction(ctx context.Context, cfg *RuntimeConfig, additionalShards int, clusterName string) error {
