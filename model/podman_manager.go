@@ -13,19 +13,21 @@ import (
 
 type PodmanNodeManager struct {
 	config    *RuntimeConfig
-	IPToNode  map[string]*RuntimeNode
-	IDToNode  map[string]*RuntimeNode
-	Nodes     []*RuntimeNode
-	Num       int
+	IPToNode   map[string]*RuntimeNode
+	HostToNode map[string]*RuntimeNode
+	IDToNode   map[string]*RuntimeNode
+	Nodes      []*RuntimeNode
+	Num        int
 }
 
 func NewPodmanNodeManager(cfg *RuntimeConfig) *PodmanNodeManager {
 	return &PodmanNodeManager{
-		config:   cfg,
-		IPToNode: make(map[string]*RuntimeNode),
-		IDToNode: make(map[string]*RuntimeNode),
-		Nodes:    make([]*RuntimeNode, 0, 10),
-		Num:      0,
+		config:     cfg,
+		IPToNode:   make(map[string]*RuntimeNode),
+		HostToNode: make(map[string]*RuntimeNode),
+		IDToNode:   make(map[string]*RuntimeNode),
+		Nodes:      make([]*RuntimeNode, 0, 10),
+		Num:        0,
 	}
 }
 
@@ -34,6 +36,9 @@ func (c *PodmanNodeManager) AddRuntimeNode(node *RuntimeNode) {
 	c.IDToNode[node.ID] = node
 	c.Nodes = append(c.Nodes, node)
 	c.Num = len(c.Nodes)
+	if node.Hostname != "" {
+		c.HostToNode[node.Hostname] = node
+	}
 	if node.Address.ClientAddr == "" {
 		node.Address = NodeAddress{
 			ClusterAddr: fmt.Sprintf("%s:%d", node.ConIp, node.ConPort),
@@ -53,6 +58,14 @@ func (c *PodmanNodeManager) HasCluster(clusterName string) bool {
 
 func (c *PodmanNodeManager) GetNodes() []*RuntimeNode   { return c.Nodes }
 func (c *PodmanNodeManager) GetNodeByIP(ip string) *RuntimeNode { return c.IPToNode[ip] }
+func (c *PodmanNodeManager) GetNodeByHost(host string) *RuntimeNode {
+	if c.HostToNode != nil {
+		if node, ok := c.HostToNode[host]; ok {
+			return node
+		}
+	}
+	return c.IPToNode[host]
+}
 func (c *PodmanNodeManager) GetNodeCount() int           { return c.Num }
 
 func (c *PodmanNodeManager) CountByCluster(clusterName string) int {
@@ -100,6 +113,7 @@ func (c *PodmanNodeManager) CreatePods(ctx context.Context, nodeNum int, cluster
 			"redis-server", configMountPath + "/redis.conf",
 			"--port", strconv.Itoa(port),
 			"--cluster-announce-bus-port", strconv.Itoa(busPort),
+			"--cluster-announce-ip", containerName,
 		}
 
 		cmd := exec.CommandContext(ctx, "podman", args...)
@@ -145,6 +159,7 @@ func (c *PodmanNodeManager) CreatePods(ctx context.Context, nodeNum int, cluster
 			HostIP:      "127.0.0.1",
 			HostPort:    hostPort,
 			ConIp:       containerIP,
+			Hostname:    containerName,
 			ID:          containerID[:12],
 			ConPort:     c.config.RedisContainerPort,
 			ClusterName: clusterName,
@@ -204,6 +219,7 @@ func (c *PodmanNodeManager) cleanupContainers(clusterName string, fromIdx, toIdx
 func (c *PodmanNodeManager) ListPodsByCluster(ctx context.Context, clusterName string) error {
 	c.Nodes = c.Nodes[:0]
 	c.IPToNode = make(map[string]*RuntimeNode)
+	c.HostToNode = make(map[string]*RuntimeNode)
 	c.IDToNode = make(map[string]*RuntimeNode)
 	c.Num = 0
 
@@ -244,6 +260,7 @@ func (c *PodmanNodeManager) ListPodsByCluster(ctx context.Context, clusterName s
 			HostIP:      "127.0.0.1",
 			HostPort:    hostPort,
 			ConIp:       containerIP,
+			Hostname:    name,
 			ID:          fullID[:12],
 			ConPort:     c.config.RedisContainerPort,
 			ClusterName: clusterName,
@@ -251,6 +268,9 @@ func (c *PodmanNodeManager) ListPodsByCluster(ctx context.Context, clusterName s
 		c.Nodes = append(c.Nodes, node)
 		c.IDToNode[node.ID] = node
 		c.IPToNode[node.ConIp] = node
+		if node.Hostname != "" {
+			c.HostToNode[node.Hostname] = node
+		}
 		c.Num++
 	}
 

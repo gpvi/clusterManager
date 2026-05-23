@@ -24,10 +24,11 @@ type NodeAddress struct {
 }
 
 type RuntimeNode struct {
-		HostIP      string
-		HostPort    uint16
-		ConIp       string
-		ConPort     uint16
+	HostIP      string
+	HostPort    uint16
+	ConIp       string
+	ConPort     uint16
+	Hostname    string
 	Name        string
 	Address     NodeAddress
 	ID          string
@@ -41,6 +42,16 @@ type RuntimeNode struct {
 		}
 		return fmt.Sprintf("%s:%d", node.HostIP, node.HostPort)
 	}
+
+// ClusterMeetAddr returns the address for CLUSTER MEET / bus communication.
+// If Hostname is set, it uses the hostname-based address (for DNS-resolvable containers).
+// Otherwise falls back to ConIp:ConPort.
+func (node *RuntimeNode) ClusterMeetAddr() string {
+	if node.Hostname != "" {
+		return fmt.Sprintf("%s:%d", node.Hostname, node.ConPort)
+	}
+	return fmt.Sprintf("%s:%d", node.ConIp, node.ConPort)
+}
 
 // ContainerInfo is the JSON-serializable view of a RuntimeNode for persistence.
 type ContainerInfo struct {
@@ -74,24 +85,26 @@ func (node *RuntimeNode) CreateRedisClient() (*redis.Client, error) {
 }
 
 type K8sNodeManager struct {
-	clientset kubernetes.Interface
-	namespace string
-	config    *RuntimeConfig
-	IPToNode  map[string]*RuntimeNode
-	Num       int
-	IDToNode  map[string]*RuntimeNode
-	Nodes     []*RuntimeNode
+	clientset  kubernetes.Interface
+	namespace  string
+	config     *RuntimeConfig
+	IPToNode   map[string]*RuntimeNode
+	HostToNode map[string]*RuntimeNode
+	Num        int
+	IDToNode   map[string]*RuntimeNode
+	Nodes      []*RuntimeNode
 }
 
 func NewK8sNodeManager(clientset kubernetes.Interface, namespace string, config *RuntimeConfig) *K8sNodeManager {
 	return &K8sNodeManager{
-		clientset: clientset,
-		namespace: namespace,
-		config:    config,
-		IPToNode:  make(map[string]*RuntimeNode),
-		IDToNode:  make(map[string]*RuntimeNode),
-		Nodes:     make([]*RuntimeNode, 0, 10),
-		Num:       0,
+		clientset:  clientset,
+		namespace:  namespace,
+		config:     config,
+		IPToNode:   make(map[string]*RuntimeNode),
+		HostToNode: make(map[string]*RuntimeNode),
+		IDToNode:   make(map[string]*RuntimeNode),
+		Nodes:      make([]*RuntimeNode, 0, 10),
+		Num:        0,
 	}
 }
 
@@ -100,6 +113,9 @@ func (c *K8sNodeManager) AddRuntimeNode(node *RuntimeNode) {
 	c.IDToNode[node.ID] = node
 	c.Nodes = append(c.Nodes, node)
 	c.Num = len(c.Nodes)
+	if node.Hostname != "" {
+		c.HostToNode[node.Hostname] = node
+	}
 	if node.Address.ClientAddr == "" {
 		node.Address = NodeAddress{
 			ClusterAddr: fmt.Sprintf("%s:%d", node.ConIp, node.ConPort),
@@ -119,6 +135,14 @@ func (c *K8sNodeManager) HasCluster(clusterName string) bool {
 
 func (c *K8sNodeManager) GetNodes() []*RuntimeNode  { return c.Nodes }
 func (c *K8sNodeManager) GetNodeByIP(ip string) *RuntimeNode { return c.IPToNode[ip] }
+func (c *K8sNodeManager) GetNodeByHost(host string) *RuntimeNode {
+	if c.HostToNode != nil {
+		if node, ok := c.HostToNode[host]; ok {
+			return node
+		}
+	}
+	return c.IPToNode[host]
+}
 func (c *K8sNodeManager) GetNodeCount() int         { return c.Num }
 
 func (c *K8sNodeManager) CountByCluster(clusterName string) int {
@@ -164,6 +188,7 @@ func (c *K8sNodeManager) CreatePods(ctx context.Context, nodeNum int, clusterNam
 							"/data/redis/config/redis.conf",
 							"--port", strconv.Itoa(int(c.config.RedisContainerPort)),
 							"--cluster-announce-bus-port", strconv.Itoa(int(c.config.RedisContainerPort + 10000)),
+							"--cluster-announce-ip", podName,
 						},
 						Ports: []corev1.ContainerPort{
 							{Name: "redis", ContainerPort: int32(c.config.RedisContainerPort)},
@@ -280,6 +305,7 @@ func (c *K8sNodeManager) CreatePods(ctx context.Context, nodeNum int, clusterNam
 				HostIP:      "127.0.0.1",
 				HostPort:    nodePort,
 				ConIp:       pod.Status.PodIP,
+				Hostname:    pod.Name,
 				ID:          string(pod.UID),
 				ConPort:     c.config.RedisContainerPort,
 				ClusterName: clusterName,
@@ -379,6 +405,7 @@ func (c *K8sNodeManager) ListPodsByCluster(ctx context.Context, clusterName stri
 	c.Nodes = c.Nodes[:0]
 	c.IPToNode = make(map[string]*RuntimeNode)
 	c.IDToNode = make(map[string]*RuntimeNode)
+	c.HostToNode = make(map[string]*RuntimeNode)
 	c.Num = 0
 
 	labelSelector := fmt.Sprintf("cluster-name=%s,managed-by=clusterManager", clusterName)
@@ -411,6 +438,7 @@ func (c *K8sNodeManager) ListPodsByCluster(ctx context.Context, clusterName stri
 			HostIP:      "127.0.0.1",
 			HostPort:    hostPort,
 			ConIp:       pod.Status.PodIP,
+			Hostname:    pod.Name,
 			ID:          string(pod.UID),
 			ConPort:     c.config.RedisContainerPort,
 			ClusterName: pod.Labels["cluster-name"],
@@ -418,6 +446,9 @@ func (c *K8sNodeManager) ListPodsByCluster(ctx context.Context, clusterName stri
 		c.Nodes = append(c.Nodes, &node)
 		c.IDToNode[node.ID] = &node
 		c.IPToNode[node.ConIp] = &node
+			if node.Hostname != "" {
+				c.HostToNode[node.Hostname] = &node
+			}
 		c.Num++
 	}
 	return nil

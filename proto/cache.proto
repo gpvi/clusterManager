@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package proto;
+option go_package = "redisClusterManager/proto";
+
+message Request {
+  string group = 1;
+  string key = 2;
+}
+
+message Response {
+  bytes value = 1;
+}
+
+message InvalidateRequest {
+  string group = 1;
+  string key   = 2;
+}
+
+service GroupCache {
+  rpc Get(Request) returns (Response);
+}

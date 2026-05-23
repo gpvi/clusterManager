@@ -11,8 +11,15 @@ type PodManager interface {
 	CountByCluster(clusterName string) int
 	GetNodes() []*RuntimeNode
 	GetNodeByIP(ip string) *RuntimeNode
+	GetNodeByHost(host string) *RuntimeNode
 	GetNodeCount() int
 	SaveToJSON(filename string) error
+}
+
+// CacheInvalidator is called when Redis slot migration completes,
+// so the cache layer can evict stale entries for the affected key range.
+type CacheInvalidator interface {
+	InvalidateSlots(start, end int)
 }
 
 // Compile-time checks that default node managers satisfy PodManager.

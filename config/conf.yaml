@@ -19,3 +19,28 @@ configs:
   container_info_file_name: "containers.json"
   image_name: "redis:7-alpine"
   redis_port: 6379
+
+# Cache subsystem configuration (GeeCache).
+cache:
+  enabled: false
+  max_bytes: 1073741824       # 1GB
+  ttl: 3600
+  hot_key_threshold: 100
+  hot_replicas: 2
+  db_rate_limit: 200
+  server_ip: "0.0.0.0"
+  server_port: 8001
+  gossip_port: 9001
+  api_gateway: false
+  cache_group_name: "default"
+  seeds: []
+  tls_mode: "insecure"
+  tls_cert_file: ""
+  tls_key_file: ""
+  tls_ca_file: ""
+
+# DNS configuration for node discovery.
+dns:
+  enabled: false
+  domain: "svc.cluster.local"
+  naming_template: "{{.ClusterName}}-redis-{{.Index}}.{{.ClusterName}}-svc.{{.Namespace}}"

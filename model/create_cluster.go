@@ -123,6 +123,7 @@ func CreateClusterAction(ctx context.Context, cfg *RuntimeConfig, shardCount int
 					HostIP: node.HostIP, HostPort: int(node.HostPort),
 					ContainerIP: node.ConIp, ContainerPort: int(node.ConPort),
 					NodeIndex: nodeIdx, Status: "running",
+					Hostname: node.Hostname,
 				})
 			}
 			store.LogOperation(clusterName, "create", fmt.Sprintf("shards=%d nodes_per_shard=%d", shardCount, nodesPerShard), true)

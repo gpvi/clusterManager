@@ -61,6 +61,7 @@ func (s *Store) migrate() error {
 		node_index     INTEGER NOT NULL,
 		role           TEXT NOT NULL DEFAULT '',
 		status         TEXT NOT NULL DEFAULT 'running',
+		hostname       TEXT NOT NULL DEFAULT '',
 		created_at     TEXT NOT NULL,
 		UNIQUE(cluster_name, name)
 	);
@@ -78,7 +79,19 @@ func (s *Store) migrate() error {
 	CREATE INDEX IF NOT EXISTS idx_operations_cluster ON operations(cluster_name);
 	`
 	_, err := s.db.Exec(schema)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Migrate existing databases: add hostname column if missing.
+	var hasHostname int
+	err = s.db.QueryRow("SELECT COUNT(*) FROM pragma_table_info('containers') WHERE name='hostname'").Scan(&hasHostname)
+	if err == nil && hasHostname == 0 {
+		if _, err := s.db.Exec("ALTER TABLE containers ADD COLUMN hostname TEXT NOT NULL DEFAULT ''"); err != nil {
+			return fmt.Errorf("add hostname column: %w", err)
+		}
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -172,25 +185,27 @@ type ContainerRecord struct {
 	NodeIndex     int
 	Role          string
 	Status        string
+	Hostname      string
 }
 
 func (s *Store) UpsertContainer(c ContainerRecord) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := s.db.Exec(`
-		INSERT INTO containers (cluster_name, name, container_id, host_ip, host_port, container_ip, container_port, node_index, role, status, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO containers (cluster_name, name, container_id, host_ip, host_port, container_ip, container_port, node_index, role, status, hostname, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(cluster_name, name) DO UPDATE SET
 			container_id=excluded.container_id, host_ip=excluded.host_ip,
 			host_port=excluded.host_port, container_ip=excluded.container_ip,
 			container_port=excluded.container_port, node_index=excluded.node_index,
-			role=excluded.role, status=excluded.status
-	`, c.ClusterName, c.Name, c.ContainerID, c.HostIP, c.HostPort, c.ContainerIP, c.ContainerPort, c.NodeIndex, c.Role, c.Status, now)
+			role=excluded.role, status=excluded.status,
+			hostname=excluded.hostname
+	`, c.ClusterName, c.Name, c.ContainerID, c.HostIP, c.HostPort, c.ContainerIP, c.ContainerPort, c.NodeIndex, c.Role, c.Status, c.Hostname, now)
 	return err
 }
 
 func (s *Store) ListContainersByCluster(clusterName string) ([]ContainerRecord, error) {
 	rows, err := s.db.Query(
-		"SELECT cluster_name, name, container_id, host_ip, host_port, container_ip, container_port, node_index, role, status FROM containers WHERE cluster_name=? ORDER BY node_index",
+		"SELECT cluster_name, name, container_id, host_ip, host_port, container_ip, container_port, node_index, role, status, hostname FROM containers WHERE cluster_name=? ORDER BY node_index",
 		clusterName,
 	)
 	if err != nil {
@@ -200,7 +215,7 @@ func (s *Store) ListContainersByCluster(clusterName string) ([]ContainerRecord, 
 	var res []ContainerRecord
 	for rows.Next() {
 		var c ContainerRecord
-		if err := rows.Scan(&c.ClusterName, &c.Name, &c.ContainerID, &c.HostIP, &c.HostPort, &c.ContainerIP, &c.ContainerPort, &c.NodeIndex, &c.Role, &c.Status); err != nil {
+		if err := rows.Scan(&c.ClusterName, &c.Name, &c.ContainerID, &c.HostIP, &c.HostPort, &c.ContainerIP, &c.ContainerPort, &c.NodeIndex, &c.Role, &c.Status, &c.Hostname); err != nil {
 			return nil, err
 		}
 		res = append(res, c)

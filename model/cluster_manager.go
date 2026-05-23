@@ -33,6 +33,7 @@ type ClusterManager struct {
 	MasterSet         map[string]bool
 	nodeManager       PodManager
 	NodesPerShard     int
+	cacheInvalidator  CacheInvalidator
 }
 
 func NewClusterManager(nodesPerShard int, nodeManager PodManager) *ClusterManager {
@@ -51,6 +52,11 @@ func NewClusterManager(nodesPerShard int, nodeManager PodManager) *ClusterManage
 	}
 
 	return &clusterManager
+}
+
+// SetCacheInvalidator registers a callback for cache invalidation after slot migration.
+func (c *ClusterManager) SetCacheInvalidator(inv CacheInvalidator) {
+	c.cacheInvalidator = inv
 }
 
 func (c *ClusterManager) CreateSource(ctx context.Context, clusterName string, sum int) error {
@@ -190,7 +196,7 @@ func (c *ClusterManager) AddShards(ctx context.Context, shardCount int, clusterN
 		if _, exist := IDToIP[masterID]; !exist {
 			continue
 		}
-		masterRuntime := c.nodeManager.GetNodeByIP(masterIP); 
+		masterRuntime := c.nodeManager.GetNodeByHost(masterIP); 
 			if masterRuntime == nil || masterRuntime.ClusterName != clusterName {
 			continue
 		}
@@ -322,7 +328,6 @@ func (c *ClusterManager) UpdateSlots(ctx context.Context, LoginNode *RuntimeNode
 }
 
 func (c *ClusterManager) MeetNodes(client *redis.Client, ctx context.Context, clusterName string) error {
-	var err error
 	nodes := c.nodeManager.GetNodes()
 	for _, node := range nodes {
 		if node.ClusterName != clusterName {
@@ -330,7 +335,16 @@ func (c *ClusterManager) MeetNodes(client *redis.Client, ctx context.Context, cl
 		}
 		_, exist := c.AlreadyMeetNode[node.ConIp]
 		if !exist {
-			_, err = client.ClusterMeet(ctx, node.ConIp, strconv.Itoa(int(node.ConPort))).Result()
+			meetAddr := node.ClusterMeetAddr()
+			host, portStr := utils.ParseIPPort(meetAddr)
+			if host == "" {
+				continue
+			}
+			port, err := utils.StringToUint16(portStr)
+			if err != nil {
+				continue
+			}
+			_, err = client.ClusterMeet(ctx, host, strconv.Itoa(int(port))).Result()
 			if err != nil {
 				return fmt.Errorf("could not meet node %v: %v", node.ConIp, err)
 			}
@@ -416,7 +430,7 @@ func (c *ClusterManager) SetAllNodeRole(ctx context.Context, clusterName string)
 func (c *ClusterManager) SetNodeAsSlave(ctx context.Context, masterIP string, slaveIP string, clusterName string) error {
 	var err error
 	slaveAddr := slaveIP
-	slaveNode := c.nodeManager.GetNodeByIP(slaveAddr)
+	slaveNode := c.nodeManager.GetNodeByHost(slaveAddr)
 	if slaveNode == nil {
 		return fmt.Errorf("slave node not found for IP %s", slaveAddr)
 	}
@@ -473,7 +487,7 @@ func (c *ClusterManager) AllocateSlots(ctx context.Context, clusterName string) 
 		if !ok {
 			return fmt.Errorf("master node not found for ID %s", masterId)
 		}
-		port := c.nodeManager.GetNodeByIP(masterNode.IP)
+		port := c.nodeManager.GetNodeByHost(masterNode.IP)
 		if port == nil {
 			return fmt.Errorf("runtime node not found for IP %s", masterNode.IP)
 		}
@@ -577,8 +591,8 @@ func (c *ClusterManager) MigratesSlotsToEmptyNode(ctx context.Context, clusterNa
 				if masterID == toID {
 					break
 				}
-				destRuntime := c.nodeManager.GetNodeByIP(c.EmptyMasters[empIdx].IP)
-				fromRuntime := c.nodeManager.GetNodeByIP(masterNode.IP)
+				destRuntime := c.nodeManager.GetNodeByHost(c.EmptyMasters[empIdx].IP)
+				fromRuntime := c.nodeManager.GetNodeByHost(masterNode.IP)
 				var destPort, fromPort, conPort uint16
 				if destRuntime != nil {
 					destPort = destRuntime.HostPort
@@ -696,6 +710,21 @@ func (c *ClusterManager) MigratesSlotsToEmptyNode(ctx context.Context, clusterNa
 	}
 
 	fmt.Printf("  slot migration: %d/%d (100%%)\n", totalSlots, totalSlots)
+
+	// Notify cache layer to invalidate affected slots.
+	if c.cacheInvalidator != nil && len(tasks) > 0 {
+		minSlot, maxSlot := tasks[0].slot, tasks[0].slot
+		for i := range tasks {
+			if tasks[i].slot < minSlot {
+				minSlot = tasks[i].slot
+			}
+			if tasks[i].slot > maxSlot {
+				maxSlot = tasks[i].slot
+			}
+		}
+		c.cacheInvalidator.InvalidateSlots(minSlot, maxSlot)
+	}
+
 	return c.PrintClusterNodesInfo(ctx)
 }
 
@@ -1005,7 +1034,7 @@ func (c *ClusterManager) ParseRedisClusterNodes(ctx context.Context, data string
 		if c.nodeManager == nil {
 			return false
 		}
-		node := c.nodeManager.GetNodeByIP(ip)
+		node := c.nodeManager.GetNodeByHost(ip)
 		return node != nil && node.ClusterName == clusterName
 	}
 

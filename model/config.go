@@ -29,6 +29,8 @@ type RuntimeConfig struct {
 	BaseNodePort        int
 	ImageName           string
 	RedisContainerPort  uint16
+	Cache               *CacheConfig
+	DNS                 *DNSConfig
 }
 
 type Config struct {
@@ -53,6 +55,35 @@ type Config struct {
 		ImageName         string `yaml:"image_name"`
 		RedisPort         uint16 `yaml:"redis_port"`
 	} `yaml:"configs"`
+	Cache CacheConfig `yaml:"cache"`
+	DNS   DNSConfig   `yaml:"dns"`
+}
+
+// CacheConfig holds configuration for the embedded cache subsystem (GeeCache).
+type CacheConfig struct {
+	Enabled          bool   `yaml:"enabled"`
+	MaxBytes         int64  `yaml:"max_bytes"`
+	TTL              int    `yaml:"ttl"`
+	HotKeyThreshold  int    `yaml:"hot_key_threshold"`
+	HotReplicas      int    `yaml:"hot_replicas"`
+	DBRateLimit      int    `yaml:"db_rate_limit"`
+	ServerIP         string `yaml:"server_ip"`
+	ServerPort       int    `yaml:"server_port"`
+	GossipPort       int    `yaml:"gossip_port"`
+	APIGateway       bool   `yaml:"api_gateway"`
+	CacheGroupName   string `yaml:"cache_group_name"`
+	Seeds            []string `yaml:"seeds"`
+	TLSMode          string `yaml:"tls_mode"`
+	TLSCertFile      string `yaml:"tls_cert_file"`
+	TLSKeyFile       string `yaml:"tls_key_file"`
+	TLSCAFile        string `yaml:"tls_ca_file"`
+}
+
+// DNSConfig holds configuration for DNS-based node discovery.
+type DNSConfig struct {
+	Enabled        bool   `yaml:"enabled"`
+	Domain         string `yaml:"domain"`
+	NamingTemplate string `yaml:"naming_template"`
 }
 
 func (c *Config) ReadConfig() (*RuntimeConfig, error) {
@@ -146,7 +177,48 @@ func (c *Config) ReadConfig() (*RuntimeConfig, error) {
 		cfg.BaseNodePort = 30000
 	}
 
+	c.resolveCacheDefaults()
+	c.resolveDNSDefaults()
+	cfg.Cache = &c.Cache
+	cfg.DNS = &c.DNS
+
 	return cfg, nil
+}
+
+func (c *Config) resolveDNSDefaults() {
+	if c.DNS.NamingTemplate == "" {
+		c.DNS.NamingTemplate = "{{.ClusterName}}-redis-{{.Index}}.{{.ClusterName}}-svc.{{.Namespace}}"
+	}
+}
+
+func (c *Config) resolveCacheDefaults() {
+	if c.Cache.MaxBytes == 0 {
+		c.Cache.MaxBytes = 1 << 30 // 1GB
+	}
+	if c.Cache.TTL == 0 {
+		c.Cache.TTL = 3600
+	}
+	if c.Cache.HotKeyThreshold == 0 {
+		c.Cache.HotKeyThreshold = 100
+	}
+	if c.Cache.HotReplicas == 0 {
+		c.Cache.HotReplicas = 2
+	}
+	if c.Cache.DBRateLimit == 0 {
+		c.Cache.DBRateLimit = 200
+	}
+	if c.Cache.ServerPort == 0 {
+		c.Cache.ServerPort = 8001
+	}
+	if c.Cache.GossipPort == 0 {
+		c.Cache.GossipPort = 9001
+	}
+	if c.Cache.CacheGroupName == "" {
+		c.Cache.CacheGroupName = "default"
+	}
+	if c.Cache.TLSMode == "" {
+		c.Cache.TLSMode = "insecure"
+	}
 }
 
 func (c *Config) loadFromEnv() {
@@ -198,6 +270,42 @@ func (c *Config) loadFromEnv() {
 	}
 	if v := os.Getenv("CLUSTER_DB_PATH"); v != "" {
 		c.DBPath = v
+	}
+	// DNS env var overrides.
+	if v := os.Getenv("CLUSTER_DNS_ENABLED"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			c.DNS.Enabled = b
+		}
+	}
+	if v := os.Getenv("CLUSTER_DNS_DOMAIN"); v != "" {
+		c.DNS.Domain = v
+	}
+	if v := os.Getenv("CLUSTER_DNS_NAMING_TEMPLATE"); v != "" {
+		c.DNS.NamingTemplate = v
+	}
+	// Cache subsystem overrides.
+	if v := os.Getenv("CACHE_MAX_BYTES"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			c.Cache.MaxBytes = n
+		}
+	}
+	if v := os.Getenv("CACHE_TTL"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			c.Cache.TTL = n
+		}
+	}
+	if v := os.Getenv("CACHE_PORT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			c.Cache.ServerPort = n
+		}
+	}
+	if v := os.Getenv("CACHE_GOSSIP_PORT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			c.Cache.GossipPort = n
+		}
+	}
+	if v := os.Getenv("CACHE_TLS_MODE"); v != "" {
+		c.Cache.TLSMode = v
 	}
 }
 
@@ -292,4 +400,92 @@ func InitConfig() (*RuntimeConfig, error) {
 	}
 	cfg.PrintConfig()
 	return cfg, nil
+}
+
+// Cache accessor methods on RuntimeConfig.
+func (cfg *RuntimeConfig) CacheGroupName() string {
+	if cfg.Cache == nil {
+		return "default"
+	}
+	return cfg.Cache.CacheGroupName
+}
+func (cfg *RuntimeConfig) CacheMaxBytes() int64 {
+	if cfg.Cache == nil {
+		return 1 << 30
+	}
+	return cfg.Cache.MaxBytes
+}
+func (cfg *RuntimeConfig) CacheTTL() int {
+	if cfg.Cache == nil {
+		return 3600
+	}
+	return cfg.Cache.TTL
+}
+func (cfg *RuntimeConfig) CacheHotKeyThreshold() int {
+	if cfg.Cache == nil {
+		return 100
+	}
+	return cfg.Cache.HotKeyThreshold
+}
+func (cfg *RuntimeConfig) CacheHotReplicas() int {
+	if cfg.Cache == nil {
+		return 2
+	}
+	return cfg.Cache.HotReplicas
+}
+func (cfg *RuntimeConfig) CacheDBRateLimit() int {
+	if cfg.Cache == nil {
+		return 200
+	}
+	return cfg.Cache.DBRateLimit
+}
+func (cfg *RuntimeConfig) CachePort() int {
+	if cfg.Cache == nil {
+		return 8001
+	}
+	return cfg.Cache.ServerPort
+}
+func (cfg *RuntimeConfig) CacheGossipPort() int {
+	if cfg.Cache == nil {
+		return 9001
+	}
+	return cfg.Cache.GossipPort
+}
+func (cfg *RuntimeConfig) CacheSeeds() []string {
+	if cfg.Cache == nil {
+		return nil
+	}
+	return cfg.Cache.Seeds
+}
+func (cfg *RuntimeConfig) CacheTLSMode() string {
+	if cfg.Cache == nil {
+		return "insecure"
+	}
+	return cfg.Cache.TLSMode
+}
+func (cfg *RuntimeConfig) CacheAPIAddr() string {
+	if cfg.Cache == nil || cfg.Cache.ServerIP == "" {
+		return ":9999"
+	}
+	return fmt.Sprintf("%s:9999", cfg.Cache.ServerIP)
+}
+
+// DNS accessor methods on RuntimeConfig.
+func (cfg *RuntimeConfig) DNSEnabled() bool {
+	if cfg.DNS == nil {
+		return false
+	}
+	return cfg.DNS.Enabled
+}
+func (cfg *RuntimeConfig) DNSDomain() string {
+	if cfg.DNS == nil || cfg.DNS.Domain == "" {
+		return "svc.cluster.local"
+	}
+	return cfg.DNS.Domain
+}
+func (cfg *RuntimeConfig) DNSNamingTemplate() string {
+	if cfg.DNS == nil {
+		return ""
+	}
+	return cfg.DNS.NamingTemplate
 }

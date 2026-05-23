@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"strconv"
-	
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
@@ -20,10 +19,11 @@ const containerdNamespace = "cluster-manager"
 type ContainerdNodeManager struct {
 	client   *containerd.Client
 	config   *RuntimeConfig
-	IPToNode map[string]*RuntimeNode
-	IDToNode map[string]*RuntimeNode
-	Nodes    []*RuntimeNode
-	Num      int
+	IPToNode   map[string]*RuntimeNode
+	HostToNode map[string]*RuntimeNode
+	IDToNode   map[string]*RuntimeNode
+	Nodes      []*RuntimeNode
+	Num        int
 }
 
 func NewContainerdNodeManager(cfg *RuntimeConfig) (*ContainerdNodeManager, error) {
@@ -34,10 +34,11 @@ func NewContainerdNodeManager(cfg *RuntimeConfig) (*ContainerdNodeManager, error
 	return &ContainerdNodeManager{
 		client:   client,
 		config:   cfg,
-		IPToNode: make(map[string]*RuntimeNode),
-		IDToNode: make(map[string]*RuntimeNode),
-		Nodes:    make([]*RuntimeNode, 0, 10),
-		Num:      0,
+		IPToNode:   make(map[string]*RuntimeNode),
+		HostToNode: make(map[string]*RuntimeNode),
+		IDToNode:   make(map[string]*RuntimeNode),
+		Nodes:      make([]*RuntimeNode, 0, 10),
+		Num:        0,
 	}, nil
 }
 
@@ -46,6 +47,9 @@ func (c *ContainerdNodeManager) AddRuntimeNode(node *RuntimeNode) {
 	c.IDToNode[node.ID] = node
 	c.Nodes = append(c.Nodes, node)
 	c.Num = len(c.Nodes)
+	if node.Hostname != "" {
+		c.HostToNode[node.Hostname] = node
+	}
 	if node.Address.ClientAddr == "" {
 		node.Address = NodeAddress{
 			ClusterAddr: fmt.Sprintf("%s:%d", node.ConIp, node.ConPort),
@@ -65,6 +69,14 @@ func (c *ContainerdNodeManager) HasCluster(clusterName string) bool {
 
 func (c *ContainerdNodeManager) GetNodes() []*RuntimeNode   { return c.Nodes }
 func (c *ContainerdNodeManager) GetNodeByIP(ip string) *RuntimeNode { return c.IPToNode[ip] }
+func (c *ContainerdNodeManager) GetNodeByHost(host string) *RuntimeNode {
+	if c.HostToNode != nil {
+		if node, ok := c.HostToNode[host]; ok {
+			return node
+		}
+	}
+	return c.IPToNode[host]
+}
 func (c *ContainerdNodeManager) GetNodeCount() int           { return c.Num }
 
 func (c *ContainerdNodeManager) CountByCluster(clusterName string) int {
@@ -113,6 +125,7 @@ func (c *ContainerdNodeManager) CreatePods(ctx context.Context, nodeNum int, clu
 			c.config.RedisConfigPath + "/redis.conf",
 			"--port", strconv.Itoa(port),
 			"--cluster-announce-bus-port", strconv.Itoa(busPort),
+			"--cluster-announce-ip", containerName,
 		}
 		spec.Mounts = []specs.Mount{
 			{
@@ -165,6 +178,7 @@ func (c *ContainerdNodeManager) CreatePods(ctx context.Context, nodeNum int, clu
 			HostIP:      "127.0.0.1",
 			HostPort:    uint16(port),
 			ConIp:       "127.0.0.1",
+			Hostname:    containerName,
 			ID:          containerID[:12],
 			ConPort:     uint16(port),
 			ClusterName: clusterName,
@@ -248,6 +262,7 @@ func (c *ContainerdNodeManager) ListPodsByCluster(ctx context.Context, clusterNa
 	ctx = namespaces.WithNamespace(ctx, containerdNamespace)
 	c.Nodes = c.Nodes[:0]
 	c.IPToNode = make(map[string]*RuntimeNode)
+	c.HostToNode = make(map[string]*RuntimeNode)
 	c.IDToNode = make(map[string]*RuntimeNode)
 	c.Num = 0
 
@@ -275,6 +290,7 @@ func (c *ContainerdNodeManager) ListPodsByCluster(ctx context.Context, clusterNa
 			HostIP:      "127.0.0.1",
 			HostPort:    uint16(port),
 			ConIp:       "127.0.0.1",
+			Hostname:    container.ID(),
 			ID:          container.ID()[:12],
 			ConPort:     uint16(port),
 			ClusterName: info.Labels["cluster-name"],
@@ -316,4 +332,3 @@ func (c *ContainerdNodeManager) DeleteResources(ctx context.Context, clusterName
 func (c *ContainerdNodeManager) SaveToJSON(filename string) error {
 	return saveNodesToJSON(filename, c.Nodes)
 }
-

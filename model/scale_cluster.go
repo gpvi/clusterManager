@@ -99,6 +99,7 @@ func ScaleClusterAction(ctx context.Context, cfg *RuntimeConfig, additionalShard
 					HostIP: node.HostIP, HostPort: int(node.HostPort),
 					ContainerIP: node.ConIp, ContainerPort: int(node.ConPort),
 					NodeIndex: nodeIdx, Status: "running",
+					Hostname: node.Hostname,
 				})
 			}
 			store.LogOperation(clusterName, "scale", fmt.Sprintf("added %d shard(s), total=%d", additionalShards, totalShards), true)
