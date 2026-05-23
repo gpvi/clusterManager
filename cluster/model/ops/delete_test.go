@@ -1,7 +1,7 @@
 //go:build integration
 // +build integration
 
-package action
+package ops
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"redisClusterManager/cluster/model"
 )
 
-func TestAddAction(t *testing.T) {
+func TestDeleteAllAction(t *testing.T) {
 	requireIntegrationTest(t)
 
 	cfg, err := model.InitConfig()
@@ -20,8 +20,8 @@ func TestAddAction(t *testing.T) {
 
 	ctx := context.Background()
 	clusterName := "myCluster"
-	err = ScaleClusterAction(ctx, cfg, 1, clusterName)
+	err = DeleteAllContainers(ctx, cfg, clusterName)
 	if err != nil {
-		t.Errorf("ScaleCluster() error = %v", err)
+		t.Fatal(err)
 	}
 }

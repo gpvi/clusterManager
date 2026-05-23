@@ -339,3 +339,9 @@ func (c *ContainerdNodeManager) DeleteResources(ctx context.Context, clusterName
 	}
 	return nil
 }
+
+var _ PodManager = (*ContainerdNodeManager)(nil)
+
+func newContainerdOrError(cfg *RuntimeConfig) (PodManager, error) {
+	return NewContainerdNodeManager(cfg)
+}

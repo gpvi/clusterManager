@@ -3,7 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"redisClusterManager/cluster/model/action"
+	"redisClusterManager/cluster/model/ops"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -21,7 +21,7 @@ var deleteCmd = &cobra.Command{
 			return fmt.Errorf("please input clustername first")
 		}
 		ctx := context.Background()
-		return action.DeleteAllContainers(ctx, appConfig, clusterName)
+		return ops.DeleteAllContainers(ctx, appConfig, clusterName)
 	},
 }
 

@@ -1,7 +1,7 @@
 //go:build integration
 // +build integration
 
-package action
+package ops
 
 import (
 	"context"
@@ -10,17 +10,18 @@ import (
 	"redisClusterManager/cluster/model"
 )
 
-func TestDeleteAllAction(t *testing.T) {
+func TestCreation(t *testing.T) {
 	requireIntegrationTest(t)
 
 	cfg, err := model.InitConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
+	cfg.RedisContainerPort = 6379
 
 	ctx := context.Background()
 	clusterName := "myCluster"
-	err = DeleteAllContainers(ctx, cfg, clusterName)
+	err = CreateClusterAction(ctx, cfg, 3, 2, clusterName)
 	if err != nil {
 		t.Fatal(err)
 	}
