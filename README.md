@@ -221,14 +221,10 @@ gRPC 提供的 API：
 
 | 文档 | 说明 |
 |------|------|
-| [docs/00-项目总览.md](docs/00-项目总览.md) | 项目目标与范围 |
-| [docs/01-架构与目录.md](docs/01-架构与目录.md) | 架构分层与目录结构 |
-| [docs/02-核心流程.md](docs/02-核心流程.md) | 创建/扩容/删除核心流程 |
-| [docs/03-配置与运行.md](docs/03-配置与运行.md) | 配置项、环境变量、运行方式 |
-| [docs/05-CLI使用手册.md](docs/05-CLI使用手册.md) | 完整 CLI 参考 |
-| [docs/06-开发与测试指南.md](docs/06-开发与测试指南.md) | 开发环境与测试 |
-| [docs/07-故障排查.md](docs/07-故障排查.md) | 常见问题排查 |
-| [docs/optimization-analysis.md](docs/optimization-analysis.md) | 热点 slot & 大 key 迁移优化分析 |
+| [docs/01-架构与目录.md](docs/01-架构与目录.md) | 完整架构、分层设计、核心流程、目录结构、配置结构 |
+| [docs/03-配置与运行.md](docs/03-配置与运行.md) | 配置项说明、环境变量、运行方式、Cache 架构 |
+| [docs/05-CLI使用手册.md](docs/05-CLI使用手册.md) | 所有 CLI 子命令参考 (create/delete/scale/cache) |
+| [docs/DNS_DESIGN.md](docs/DNS_DESIGN.md) | DNS-based 节点发现设计方案 |
 | [docs/INTEGRATION_DESIGN.md](docs/INTEGRATION_DESIGN.md) | GeeCache + clusterManager 整合设计方案 |
 
 ## Makefile
