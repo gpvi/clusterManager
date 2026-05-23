@@ -24,9 +24,6 @@ type RuntimeConfig struct {
 	Backend             string
 	DBPath              string
 	ContainerdSocket    string
-	KubeConfigPath      string
-	KubeNamespace       string
-	BaseNodePort        int
 	ImageName           string
 	RedisContainerPort  uint16
 	Cache               *CacheConfig
@@ -47,11 +44,6 @@ type Config struct {
 		RedisConfigDataPath string `yaml:"redis_config_data_path"`
 		RuntimeStateDir     string `yaml:"runtime_state_dir"`
 	} `yaml:"paths"`
-	Kubernetes struct {
-		KubeConfigPath string `yaml:"kube_config_path"`
-		Namespace      string `yaml:"namespace"`
-		BaseNodePort   int    `yaml:"base_node_port"`
-	} `yaml:"kubernetes"`
 	Configs struct {
 		SaveFileName      string `yaml:"save_file_name"`
 		ImageName         string `yaml:"image_name"`
@@ -63,22 +55,22 @@ type Config struct {
 
 // CacheConfig holds configuration for the embedded cache subsystem (GeeCache).
 type CacheConfig struct {
-	Enabled          bool   `yaml:"enabled"`
-	MaxBytes         int64  `yaml:"max_bytes"`
-	TTL              int    `yaml:"ttl"`
-	HotKeyThreshold  int    `yaml:"hot_key_threshold"`
-	HotReplicas      int    `yaml:"hot_replicas"`
-	DBRateLimit      int    `yaml:"db_rate_limit"`
-	ServerIP         string `yaml:"server_ip"`
-	ServerPort       int    `yaml:"server_port"`
-	GossipPort       int    `yaml:"gossip_port"`
-	APIGateway       bool   `yaml:"api_gateway"`
-	CacheGroupName   string `yaml:"cache_group_name"`
+	Enabled          bool     `yaml:"enabled"`
+	MaxBytes         int64    `yaml:"max_bytes"`
+	TTL              int      `yaml:"ttl"`
+	HotKeyThreshold  int      `yaml:"hot_key_threshold"`
+	HotReplicas      int      `yaml:"hot_replicas"`
+	DBRateLimit      int      `yaml:"db_rate_limit"`
+	ServerIP         string   `yaml:"server_ip"`
+	ServerPort       int      `yaml:"server_port"`
+	GossipPort       int      `yaml:"gossip_port"`
+	APIGateway       bool     `yaml:"api_gateway"`
+	CacheGroupName   string   `yaml:"cache_group_name"`
 	Seeds            []string `yaml:"seeds"`
-	TLSMode          string `yaml:"tls_mode"`
-	TLSCertFile      string `yaml:"tls_cert_file"`
-	TLSKeyFile       string `yaml:"tls_key_file"`
-	TLSCAFile        string `yaml:"tls_ca_file"`
+	TLSMode          string   `yaml:"tls_mode"`
+	TLSCertFile      string   `yaml:"tls_cert_file"`
+	TLSKeyFile       string   `yaml:"tls_key_file"`
+	TLSCAFile        string   `yaml:"tls_ca_file"`
 }
 
 // DNSConfig holds configuration for DNS-based node discovery.
@@ -145,7 +137,7 @@ func (c *Config) ReadConfig() (*RuntimeConfig, error) {
 
 	cfg.Backend = c.Backend
 	if cfg.Backend == "" {
-		cfg.Backend = "k8s"
+		cfg.Backend = "podman"
 	}
 
 	cfg.ContainerdSocket = c.ContainerdSocket
@@ -156,21 +148,6 @@ func (c *Config) ReadConfig() (*RuntimeConfig, error) {
 	cfg.DBPath = c.DBPath
 	if cfg.DBPath == "" {
 		cfg.DBPath = filepath.Join(cfg.RuntimeStateDir, "cluster.db")
-	}
-
-	cfg.KubeConfigPath = c.Kubernetes.KubeConfigPath
-	if cfg.KubeConfigPath == "" {
-		cfg.KubeConfigPath = defaultKubeConfig()
-	}
-
-	cfg.KubeNamespace = c.Kubernetes.Namespace
-	if cfg.KubeNamespace == "" {
-		cfg.KubeNamespace = "default"
-	}
-
-	cfg.BaseNodePort = c.Kubernetes.BaseNodePort
-	if cfg.BaseNodePort == 0 {
-		cfg.BaseNodePort = 30000
 	}
 
 	c.resolveCacheDefaults()
@@ -238,17 +215,6 @@ func (c *Config) loadFromEnv() {
 	}
 	if v := os.Getenv("CLUSTER_STATE_DIR"); v != "" {
 		c.Paths.RuntimeStateDir = v
-	}
-	if v := os.Getenv("KUBECONFIG"); v != "" {
-		c.Kubernetes.KubeConfigPath = v
-	}
-	if v := os.Getenv("KUBE_NAMESPACE"); v != "" {
-		c.Kubernetes.Namespace = v
-	}
-	if v := os.Getenv("BASE_NODE_PORT"); v != "" {
-		if port, err := strconv.Atoi(v); err == nil {
-			c.Kubernetes.BaseNodePort = port
-		}
 	}
 	if v := os.Getenv("CLUSTER_REDIS_PORT"); v != "" {
 		if port, err := strconv.ParseUint(v, 10, 16); err == nil {
@@ -326,9 +292,6 @@ func (cfg *RuntimeConfig) PrintConfig() {
 	fmt.Printf("RuntimeStateDir: %s\n", cfg.RuntimeStateDir)
 	fmt.Printf("ConfigSaveFileName: %s\n", cfg.ConfigSaveFileName)
 	fmt.Printf("ContainerdSocket: %s\n", cfg.ContainerdSocket)
-	fmt.Printf("KubeConfigPath: %s\n", cfg.KubeConfigPath)
-	fmt.Printf("KubeNamespace: %s\n", cfg.KubeNamespace)
-	fmt.Printf("BaseNodePort: %d\n", cfg.BaseNodePort)
 	fmt.Printf("RedisContainerPort: %d\n", cfg.RedisContainerPort)
 	fmt.Printf("ImageName: %s\n", cfg.ImageName)
 }
@@ -356,17 +319,6 @@ func resolveStateFilePath(root, name string) string {
 		return name
 	}
 	return filepath.Join(root, name)
-}
-
-func defaultKubeConfig() string {
-	if v := os.Getenv("KUBECONFIG"); v != "" {
-		return v
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, ".kube", "config")
 }
 
 func defaultContainerdSocket() string {

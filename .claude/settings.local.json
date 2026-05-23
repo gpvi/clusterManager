@@ -85,7 +85,9 @@
       "Bash(rm -f /tmp/all_go_files.txt)",
       "Bash(git ls-files *)",
       "Read(//tmp/**)",
-      "Bash(rm -f .DS_Store containers.json run_time_config.yaml .vscode/settings.json && rm -rf build/cluster build/cluster.exe runtime/datatest cmd/agent && echo \"deleted\")"
+      "Bash(rm -f .DS_Store containers.json run_time_config.yaml .vscode/settings.json && rm -rf build/cluster build/cluster.exe runtime/datatest cmd/agent && echo \"deleted\")",
+      "Bash(sed -i '/sigs\\\\.k8s\\\\.io/d' go.mod)",
+      "Bash(GIT_EDITOR=true git rebase --continue)"
     ],
     "additionalDirectories": [
       "E:\\Projects\\clusterManager\\.vscode"

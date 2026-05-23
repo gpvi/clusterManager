@@ -64,7 +64,7 @@ func customHelpFunc(cmd *cobra.Command, args []string) {
 func init() {
 	// 设置自定义的 Help 函数
 	RootCmd.SetHelpFunc(customHelpFunc)
-	RootCmd.PersistentFlags().StringVarP(&backend, "backend", "b", "k8s", "Backend to use: k8s, podman, or containerd")
+	RootCmd.PersistentFlags().StringVarP(&backend, "backend", "b", "podman", "Backend to use: podman or containerd")
 	RootCmd.PersistentFlags().StringVar(&containerdSocket, "containerd-socket", "", "Containerd socket path")
 	RootCmd.PersistentFlags().StringVar(&dbPath, "db", "", "SQLite database path for state persistence (default: runtime/cluster.db)")
 }
