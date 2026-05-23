@@ -20,7 +20,6 @@ type RuntimeConfig struct {
 	RedisHostDataPath   string
 	RedisConfigDataPath string
 	RuntimeStateDir     string
-	ContainerInfoFile   string
 	ConfigSaveFileName  string
 	Backend             string
 	DBPath              string
@@ -55,7 +54,6 @@ type Config struct {
 	} `yaml:"kubernetes"`
 	Configs struct {
 		SaveFileName      string `yaml:"save_file_name"`
-		ContainerInfoFile string `yaml:"container_info_file_name"`
 		ImageName         string `yaml:"image_name"`
 		RedisPort         uint16 `yaml:"redis_port"`
 	} `yaml:"configs"`
@@ -134,12 +132,6 @@ func (c *Config) ReadConfig() (*RuntimeConfig, error) {
 		configFileName = "run_time_config.yaml"
 	}
 	cfg.ConfigSaveFileName = resolveStateFilePath(cfg.RuntimeStateDir, configFileName)
-
-	containerInfoFile := c.Configs.ContainerInfoFile
-	if containerInfoFile == "" {
-		containerInfoFile = "containers.json"
-	}
-	cfg.ContainerInfoFile = containerInfoFile
 
 	cfg.ImageName = c.Configs.ImageName
 	if cfg.ImageName == "" {
@@ -241,9 +233,6 @@ func (c *Config) loadFromEnv() {
 	if v := os.Getenv("CLUSTER_SAVE_FILE_NAME"); v != "" {
 		c.Configs.SaveFileName = v
 	}
-	if v := os.Getenv("CLUSTER_CONTAINER_INFO_FILE"); v != "" {
-		c.Configs.ContainerInfoFile = v
-	}
 	if v := os.Getenv("CLUSTER_IMAGE_NAME"); v != "" {
 		c.Configs.ImageName = v
 	}
@@ -327,10 +316,6 @@ func (cfg *RuntimeConfig) ClusterRuntimeConfigPath(clusterName string) string {
 	return resolveStateFilePath(cfg.ClusterStateDir(clusterName), cfg.ConfigSaveFileName)
 }
 
-func (cfg *RuntimeConfig) ClusterContainerInfoPath(clusterName string) string {
-	return resolveStateFilePath(cfg.ClusterStateDir(clusterName), cfg.ContainerInfoFile)
-}
-
 func (cfg *RuntimeConfig) PrintConfig() {
 	fmt.Printf("ProjectRoot: %s\n", cfg.ProjectRoot)
 	fmt.Printf("Backend: %s\n", cfg.Backend)
@@ -340,7 +325,6 @@ func (cfg *RuntimeConfig) PrintConfig() {
 	fmt.Printf("RedisConfigDataPath: %s\n", cfg.RedisConfigDataPath)
 	fmt.Printf("RuntimeStateDir: %s\n", cfg.RuntimeStateDir)
 	fmt.Printf("ConfigSaveFileName: %s\n", cfg.ConfigSaveFileName)
-	fmt.Printf("ContainerInfoFile: %s\n", cfg.ContainerInfoFile)
 	fmt.Printf("ContainerdSocket: %s\n", cfg.ContainerdSocket)
 	fmt.Printf("KubeConfigPath: %s\n", cfg.KubeConfigPath)
 	fmt.Printf("KubeNamespace: %s\n", cfg.KubeNamespace)

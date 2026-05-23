@@ -25,15 +25,6 @@ func DeleteAllContainers(ctx context.Context, cfg *RuntimeConfig, clusterName st
 		}
 	}
 
-	containerFile := cfg.ClusterContainerInfoPath(clusterName)
-	if utils.FileExists(containerFile) {
-		fmt.Printf("File %s already exists, deleting...\n", containerFile)
-		err := os.Remove(containerFile)
-		if err != nil {
-			return fmt.Errorf("error deleting file: %v", err)
-		}
-	}
-
 	err = nodeManager.DeleteResources(ctx, clusterName)
 	if err != nil {
 		return fmt.Errorf("delete resources fail: %v", err)

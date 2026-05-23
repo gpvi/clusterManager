@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clusterd
+  namespace: default
+  labels:
+    app: clusterd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: clusterd
+  template:
+    metadata:
+      labels:
+        app: clusterd
+    spec:
+      containers:
+      - name: toolserver
+        image: clusterd:latest
+        imagePullPolicy: IfNotPresent
+        command: ["/clusterd"]
+        ports:
+        - containerPort: 50051
+          name: grpc
+        env:
+        - name: GRPC_PORT
+          value: "50051"
+        - name: KUBE_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clusterd
+  namespace: default
+spec:
+  selector:
+    app: clusterd
+  ports:
+  - port: 50051
+    targetPort: 50051
+    name: grpc

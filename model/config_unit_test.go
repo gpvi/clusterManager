@@ -7,8 +7,8 @@ import (
 
 func TestResolveContainerHostPathKeepsUnixStyleAbsolutePath(t *testing.T) {
 	root := `E:\Projects\clusterManager\clusterManager-main`
-	got := resolveContainerHostPath(root, "/mnt/e/Projects/clusterManager/clusterManager-main/setup/redis/config")
-	want := "/mnt/e/Projects/clusterManager/clusterManager-main/setup/redis/config"
+	got := resolveContainerHostPath(root, "/mnt/e/Projects/clusterManager/clusterManager-main/configs")
+	want := "/mnt/e/Projects/clusterManager/clusterManager-main/configs"
 	if got != want {
 		t.Fatalf("resolved path = %q, want %q", got, want)
 	}
@@ -16,8 +16,8 @@ func TestResolveContainerHostPathKeepsUnixStyleAbsolutePath(t *testing.T) {
 
 func TestResolveContainerHostPathResolvesRelativeWindowsPath(t *testing.T) {
 	root := `E:\Projects\clusterManager\clusterManager-main`
-	got := resolveContainerHostPath(root, "setup/redis/config")
-	want := `E:\Projects\clusterManager\clusterManager-main\setup\redis\config`
+	got := resolveContainerHostPath(root, "configs")
+	want := `E:\Projects\clusterManager\clusterManager-main\configs`
 	if got != want {
 		t.Fatalf("resolved path = %q, want %q", got, want)
 	}

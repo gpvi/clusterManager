@@ -4,14 +4,10 @@
 *.swp
 *.swo
 *~
-.DS_Store
 
 # Go build
 .gocache/
-cluster
-cluster-*
-cluster-linux
-*.exe
+build/
 *.test
 *.out
 
@@ -41,3 +37,5 @@ Thumbs.db
 
 # Vendor
 vendor/
+
+agent/

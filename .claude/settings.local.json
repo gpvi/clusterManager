@@ -76,7 +76,19 @@
       "Bash(git push *)",
       "Bash(git config *)",
       "Bash(git branch *)",
-      "Bash(git remote *)"
+      "Bash(git remote *)",
+      "Bash(grep -E \"\\\\.DS_Store|^cluster$|cluster$\")",
+      "Bash(git rm *)",
+      "Bash(git mv *)",
+      "Bash(grep -iE '\\\\.exe$|\\\\.out$|\\\\.test$|\\\\.bin$|\\\\.msi$|\\\\.dll$|\\\\.so$|\\\\.dylib$')",
+      "Bash(grep -i '\\\\.proto$')",
+      "Bash(rm -f /tmp/all_go_files.txt)",
+      "Bash(git ls-files *)",
+      "Read(//tmp/**)",
+      "Bash(rm -f .DS_Store containers.json run_time_config.yaml .vscode/settings.json && rm -rf build/cluster build/cluster.exe runtime/datatest cmd/agent && echo \"deleted\")"
+    ],
+    "additionalDirectories": [
+      "E:\\Projects\\clusterManager\\.vscode"
     ]
   }
 }

@@ -74,18 +74,11 @@ func CreateClusterAction(ctx context.Context, cfg *RuntimeConfig, shardCount int
 	fmt.Println("Create succeed!")
 
 	clusterStateDir := cfg.ClusterStateDir(clusterName)
-	containerInfoPath := cfg.ClusterContainerInfoPath(clusterName)
 	runtimeConfigPath := cfg.ClusterRuntimeConfigPath(clusterName)
 
 	config := RedisClusterConfig{
 		NodesPerShard: clusterManager.NodesPerShard,
 		Port:          cfg.RedisContainerPort,
-	}
-
-	if err := nodeManager.SaveToJSON(containerInfoPath); err != nil {
-		fmt.Println("Error:", err)
-	} else {
-		fmt.Printf("Container information saved to %s\n", containerInfoPath)
 	}
 
 	if err := os.MkdirAll(clusterStateDir, 0755); err != nil {
