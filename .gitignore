@@ -1,4 +1,33 @@
+# IDE / Editor
 .idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Go build
 .gocache/
 cluster
 cluster-linux
+*.exe
+*.test
+*.out
+
+# Runtime state
+runtime/
+*.db
+*.db-journal
+
+# Config with secrets
+*.local.yaml
+*.local.yml
+config.local.yaml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude
+.claude/settings.local.json
+.claude/worktrees/
+.claude/scheduled_tasks.json
