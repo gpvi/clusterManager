@@ -3,7 +3,7 @@ package cmd
 import (
 	"context"
 	"log"
-	"redisClusterManager/cluster/model"
+	"redisClusterManager/cluster/model/action"
 
 	"github.com/spf13/cobra"
 )
@@ -24,7 +24,7 @@ var createCmd = &cobra.Command{
 		if redisPort != 0 {
 			appConfig.RedisContainerPort = redisPort
 		}
-		err := model.CreateClusterAction(ctx, appConfig, shardCount, nodesPerShard, clusterName)
+		err := action.CreateClusterAction(ctx, appConfig, shardCount, nodesPerShard, clusterName)
 		if err != nil {
 			log.Printf("CreateClusterAction Error: %v", err)
 		}

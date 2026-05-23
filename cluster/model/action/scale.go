@@ -1,4 +1,4 @@
-package model
+package action
 
 import (
 	"context"
@@ -6,13 +6,15 @@ import (
 	"strconv"
 	"strings"
 
+	"redisClusterManager/cluster/model"
+	"redisClusterManager/cluster/model/store"
 	"redisClusterManager/cluster/utils"
 )
 
-func ScaleClusterAction(ctx context.Context, cfg *RuntimeConfig, additionalShards int, clusterName string) error {
+func ScaleClusterAction(ctx context.Context, cfg *model.RuntimeConfig, additionalShards int, clusterName string) error {
 	var err error
 
-	nodeManager, err := NewNodeManager(cfg)
+	nodeManager, err := model.NewNodeManager(cfg)
 	if err != nil {
 		return fmt.Errorf("create node manager fail: %v", err)
 	}
@@ -28,7 +30,7 @@ func ScaleClusterAction(ctx context.Context, cfg *RuntimeConfig, additionalShard
 	fmt.Println("nodesPerShard:")
 	fmt.Println(nodesPerShard)
 
-	clusterManager := NewClusterManager(nodesPerShard, nodeManager)
+	clusterManager := model.NewClusterManager(nodesPerShard, nodeManager)
 
 	// Register cache invalidator if the caller injected one (in-process mode).
 	if cfg.CacheInvalidator != nil {
@@ -41,7 +43,7 @@ func ScaleClusterAction(ctx context.Context, cfg *RuntimeConfig, additionalShard
 	}
 
 	if nodeManager.GetNodeCount() == 0 {
-		return fmt.Errorf("current pods num is 0, please create cluster first: %w", ErrClusterNotFound)
+		return fmt.Errorf("current pods num is 0, please create cluster first: %w", model.ErrClusterNotFound)
 	}
 
 	nodes := nodeManager.GetNodes()
@@ -52,7 +54,7 @@ func ScaleClusterAction(ctx context.Context, cfg *RuntimeConfig, additionalShard
 		}
 	}
 	if ClusterNodeIndex >= nodeManager.GetNodeCount() {
-		return fmt.Errorf("cluster with name %s not found: %w", clusterName, ErrClusterNotFound)
+		return fmt.Errorf("cluster with name %s not found: %w", clusterName, model.ErrClusterNotFound)
 	}
 	err = clusterManager.UpdateAfterMeet(ctx, nodes[ClusterNodeIndex], clusterName)
 	if err != nil {
@@ -82,10 +84,10 @@ func ScaleClusterAction(ctx context.Context, cfg *RuntimeConfig, additionalShard
 
 	// Persist updated state to SQLite.
 	if cfg.DBPath != "" {
-		if store, serr := OpenStore(cfg.DBPath); serr == nil {
-			defer store.Close()
+		if s, serr := store.OpenStore(cfg.DBPath); serr == nil {
+			defer s.Close()
 			totalShards := len(clusterManager.MasterIDs)
-			store.UpsertCluster(ClusterRecord{
+			s.UpsertCluster(store.ClusterRecord{
 				Name:          clusterName,
 				Backend:       cfg.Backend,
 				Shards:        totalShards,
@@ -99,7 +101,7 @@ func ScaleClusterAction(ctx context.Context, cfg *RuntimeConfig, additionalShard
 					continue
 				}
 				nodeIdx, _ := strconv.Atoi(strings.TrimPrefix(node.Name, clusterName+"-redis-"))
-				store.UpsertContainer(ContainerRecord{
+				s.UpsertContainer(store.ContainerRecord{
 					ClusterName: clusterName, Name: node.Name, ContainerID: node.ID,
 					HostIP: node.HostIP, HostPort: int(node.HostPort),
 					ContainerIP: node.ConIp, ContainerPort: int(node.ConPort),
@@ -107,7 +109,7 @@ func ScaleClusterAction(ctx context.Context, cfg *RuntimeConfig, additionalShard
 					Hostname: node.Hostname,
 				})
 			}
-			store.LogOperation(clusterName, "scale", fmt.Sprintf("added %d shard(s), total=%d", additionalShards, totalShards), true)
+			s.LogOperation(clusterName, "scale", fmt.Sprintf("added %d shard(s), total=%d", additionalShards, totalShards), true)
 		}
 	}
 

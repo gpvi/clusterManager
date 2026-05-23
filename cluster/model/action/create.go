@@ -1,4 +1,4 @@
-package model
+package action
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 
+	"redisClusterManager/cluster/model"
+	"redisClusterManager/cluster/model/store"
 	"redisClusterManager/cluster/utils"
 )
 
@@ -23,14 +25,14 @@ func (c RedisClusterConfig) EffectiveNodesPerShard() int {
 	return c.LegacyReplica
 }
 
-func CreateClusterAction(ctx context.Context, cfg *RuntimeConfig, shardCount int, nodesPerShard int, clusterName string) error {
+func CreateClusterAction(ctx context.Context, cfg *model.RuntimeConfig, shardCount int, nodesPerShard int, clusterName string) error {
 	var err error
 
-	nodeManager, err := NewNodeManager(cfg)
+	nodeManager, err := model.NewNodeManager(cfg)
 	if err != nil {
 		return fmt.Errorf("create node manager fail: %v", err)
 	}
-	clusterManager := NewClusterManager(nodesPerShard, nodeManager)
+	clusterManager := model.NewClusterManager(nodesPerShard, nodeManager)
 
 	// Register cache invalidator if the caller injected one (in-process mode).
 	if cfg.CacheInvalidator != nil {
@@ -52,7 +54,7 @@ func CreateClusterAction(ctx context.Context, cfg *RuntimeConfig, shardCount int
 		return fmt.Errorf("list cluster pods fail: %v", err)
 	}
 	if nodeManager.HasCluster(clusterName) {
-		return fmt.Errorf("cluster %s already exists with %d pod(s), please delete it before recreating: %w", clusterName, nodeManager.CountByCluster(clusterName), ErrClusterExists)
+		return fmt.Errorf("cluster %s already exists with %d pod(s), please delete it before recreating: %w", clusterName, nodeManager.CountByCluster(clusterName), model.ErrClusterExists)
 	}
 
 	defer func() {
@@ -103,10 +105,10 @@ func CreateClusterAction(ctx context.Context, cfg *RuntimeConfig, shardCount int
 
 	// Persist to SQLite if configured.
 	if cfg.DBPath != "" {
-		store, serr := OpenStore(cfg.DBPath)
+		s, serr := store.OpenStore(cfg.DBPath)
 		if serr == nil {
-			defer store.Close()
-			store.UpsertCluster(ClusterRecord{
+			defer s.Close()
+			s.UpsertCluster(store.ClusterRecord{
 				Name: clusterName, Backend: cfg.Backend, Shards: shardCount,
 				NodesPerShard: nodesPerShard, RedisPort: int(cfg.RedisContainerPort),
 				Image: cfg.ImageName, Status: "ready",
@@ -116,7 +118,7 @@ func CreateClusterAction(ctx context.Context, cfg *RuntimeConfig, shardCount int
 					continue
 				}
 				nodeIdx, _ := strconv.Atoi(strings.TrimPrefix(node.Name, clusterName+"-redis-"))
-				store.UpsertContainer(ContainerRecord{
+				s.UpsertContainer(store.ContainerRecord{
 					ClusterName: clusterName, Name: node.Name, ContainerID: node.ID,
 					HostIP: node.HostIP, HostPort: int(node.HostPort),
 					ContainerIP: node.ConIp, ContainerPort: int(node.ConPort),
@@ -124,7 +126,7 @@ func CreateClusterAction(ctx context.Context, cfg *RuntimeConfig, shardCount int
 					Hostname: node.Hostname,
 				})
 			}
-			store.LogOperation(clusterName, "create", fmt.Sprintf("shards=%d nodes_per_shard=%d", shardCount, nodesPerShard), true)
+			s.LogOperation(clusterName, "create", fmt.Sprintf("shards=%d nodes_per_shard=%d", shardCount, nodesPerShard), true)
 		}
 	}
 

@@ -1,17 +1,19 @@
-package model
+package action
 
 import (
 	"context"
 	"fmt"
 	"os"
 
+	"redisClusterManager/cluster/model"
+	"redisClusterManager/cluster/model/store"
 	"redisClusterManager/cluster/utils"
 )
 
-func DeleteAllContainers(ctx context.Context, cfg *RuntimeConfig, clusterName string) error {
+func DeleteAllContainers(ctx context.Context, cfg *model.RuntimeConfig, clusterName string) error {
 	var err error
 
-	nodeManager, err := NewNodeManager(cfg)
+	nodeManager, err := model.NewNodeManager(cfg)
 	if err != nil {
 		return fmt.Errorf("create node manager fail: %v", err)
 	}
@@ -32,10 +34,10 @@ func DeleteAllContainers(ctx context.Context, cfg *RuntimeConfig, clusterName st
 
 	// Remove from SQLite if configured.
 	if cfg.DBPath != "" {
-		if store, serr := OpenStore(cfg.DBPath); serr == nil {
-			defer store.Close()
-			store.DeleteCluster(clusterName)
-			store.LogOperation(clusterName, "delete", "removed all containers", true)
+		if s, serr := store.OpenStore(cfg.DBPath); serr == nil {
+			defer s.Close()
+			s.DeleteCluster(clusterName)
+			s.LogOperation(clusterName, "delete", "removed all containers", true)
 		}
 	}
 
