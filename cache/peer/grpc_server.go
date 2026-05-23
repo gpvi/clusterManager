@@ -1,7 +1,7 @@
 package peer
 
 import (
-	pb "redisClusterManager/proto"
+	pb "redisClusterManager/cluster/proto"
 	"context"
 	"fmt"
 	"log"

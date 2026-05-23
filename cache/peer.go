@@ -1,6 +1,6 @@
 package cache
 
-import pb "redisClusterManager/proto"
+import pb "redisClusterManager/cluster/proto"
 
 // 根据传入的 key 选择相应节点 PeerGetter。
 type PeerPicker interface {

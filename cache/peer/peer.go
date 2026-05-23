@@ -3,7 +3,7 @@ package peer
 import (
 	"context"
 
-	pb "redisClusterManager/proto"
+	pb "redisClusterManager/cluster/proto"
 )
 
 // PeerPicker selects a peer for a given key.

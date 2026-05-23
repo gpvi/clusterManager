@@ -8,7 +8,7 @@ go build -o cluster .
 go build -tags containerd -o cluster .
 ```
 
-程序入口是 `main.go`，Cobra 根命令在 `cmd/root.go`。
+程序入口是 `main.go`，Cobra 根命令在 `cluster/cmd/root.go`。
 
 ## 2. 命令总览
 

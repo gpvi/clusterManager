@@ -7,9 +7,9 @@
 | 模式 | 入口 | 说明 |
 |------|------|------|
 | **CLI 工具** | `main.go` | 命令行直接管理 Redis Cluster（创建/扩容/删除） |
-| **Cache Node** | `cmd/cache.go` | 启动分布式内存缓存节点（GeeCache），支持 gRPC + SWIM gossip |
-| **K8s Operator** | `cmd/operator/main.go` | 声明式管理，通过 CRD 描述集群，controller 自动调和 |
-| **gRPC Server** | `cmd/clusterd/main.go` | 提供 gRPC API，Agent 通过远程调用管理集群 |
+| **Cache Node** | `cluster/cmd/cache.go` | 启动分布式内存缓存节点（GeeCache），支持 gRPC + SWIM gossip |
+| **K8s Operator** | `cluster/cmd/operator/main.go` | 声明式管理，通过 CRD 描述集群，controller 自动调和 |
+| **gRPC Server** | `cluster/cmd/clusterd/main.go` | 提供 gRPC API，Agent 通过远程调用管理集群 |
 
 ## 支持的后端
 
@@ -22,36 +22,45 @@
 ```
 .
 ├── main.go                  # CLI 工具入口
-├── cmd/
-│   ├── root.go              # cobra 根命令
-│   ├── create.go            # create 子命令
-│   ├── scale.go             # scale 子命令
-│   ├── delete.go            # delete 子命令
-│   ├── operator/main.go     # K8s Operator 入口
-│   └── clusterd/main.go     # gRPC server 入口
-├── controller/
-│   └── rediscluster_controller.go  # CRD reconcile loop
-├── model/
-│   ├── interfaces.go        # PodManager 接口定义
-│   ├── factory.go           # 后端工厂方法
-│   ├── config.go            # 配置加载（YAML + 环境变量）
-│   ├── store.go             # SQLite 持久化
-│   ├── cluster_manager.go   # 集群操作核心逻辑
-│   ├── cluster_node.go      # 集群节点模型
-│   ├── k8s_manager.go       # K8s 后端实现
-│   ├── podman_manager.go    # Podman 后端实现
-│   ├── containerd_manager.go # Containerd 后端实现
-│   ├── create_cluster.go    # 创建集群流程
-│   ├── scale_cluster.go     # 扩容集群流程
-│   ├── delete_cluster.go    # 删除集群流程
-│   └── errors.go            # 错误定义
-├── api/v1/
-│   └── rediscluster_types.go # CRD 类型定义
-├── proto/
-│   ├── rediscluster.proto       # clusterd gRPC proto
-│   ├── cache.proto              # cache peer gRPC proto
-│   ├── cache.pb.go / cache_grpc.go
-│   └── rediscluster.pb.go / rediscluster_grpc.pb.go
+├── cluster/
+│   ├── cmd/
+│   │   ├── root.go              # cobra 根命令
+│   │   ├── create.go            # create 子命令
+│   │   ├── scale.go             # scale 子命令
+│   │   ├── delete.go            # delete 子命令
+│   │   ├── operator/main.go     # K8s Operator 入口
+│   │   └── clusterd/main.go     # gRPC server 入口
+│   ├── controller/
+│   │   └── rediscluster_controller.go  # CRD reconcile loop
+│   ├── model/
+│   │   ├── interfaces.go        # PodManager 接口定义
+│   │   ├── factory.go           # 后端工厂方法
+│   │   ├── config.go            # 配置加载（YAML + 环境变量）
+│   │   ├── store.go             # SQLite 持久化
+│   │   ├── cluster_manager.go   # 集群操作核心逻辑
+│   │   ├── cluster_node.go      # 集群节点模型
+│   │   ├── k8s_manager.go       # K8s 后端实现
+│   │   ├── podman_manager.go    # Podman 后端实现
+│   │   ├── containerd_manager.go # Containerd 后端实现
+│   │   ├── create_cluster.go    # 创建集群流程
+│   │   ├── scale_cluster.go     # 扩容集群流程
+│   │   ├── delete_cluster.go    # 删除集群流程
+│   │   └── errors.go            # 错误定义
+│   ├── api/v1/
+│   │   └── rediscluster_types.go # CRD 类型定义
+│   ├── proto/
+│   │   ├── rediscluster.proto       # clusterd gRPC proto
+│   │   ├── cache.proto              # cache peer gRPC proto
+│   │   ├── cache.pb.go / cache_grpc.go
+│   │   └── rediscluster.pb.go / rediscluster_grpc.pb.go
+│   ├── config/
+│   │   ├── conf.yaml            # 默认配置文件
+│   │   ├── rbac.yaml            # K8s RBAC
+│   │   ├── operator.yaml        # K8s Operator 部署
+│   │   ├── clusterd.yaml        # K8s clusterd 部署
+│   │   ├── crd/rediscluster.yaml # CRD 定义
+│   │   └── examples/            # CR 示例
+│   └── utils/                   # 工具函数
 ├── cache/                       # 分布式缓存子系统 (GeeCache)
 │   ├── run.go / init.go / starter.go  # 缓存节点入口
 │   ├── geecache.go              # Group 缓存命名空间
@@ -64,16 +73,8 @@
 │   ├── consistenthash/          # 一致性哈希
 │   ├── singleflight/            # 请求合并
 │   └── peer/                    # gRPC peer + memberlist
-├── config/
-│   ├── conf.yaml            # 默认配置文件
-│   ├── rbac.yaml            # K8s RBAC
-│   ├── operator.yaml        # K8s Operator 部署
-│   ├── clusterd.yaml        # K8s clusterd 部署
-│   ├── crd/rediscluster.yaml # CRD 定义
-│   └── examples/            # CR 示例
 ├── configs/
 │   └── redis.conf           # Redis 容器配置模板
-└── utils/                   # 工具函数
 ```
 
 ## 快速开始 — CLI 模式
@@ -122,14 +123,14 @@ make build
 
 ```bash
 # 1. 部署 CRD
-kubectl apply -f config/crd/rediscluster.yaml
+kubectl apply -f cluster/config/crd/rediscluster.yaml
 
 # 2. 部署 RBAC + Operator
-kubectl apply -f config/rbac.yaml
-kubectl apply -f config/operator.yaml
+kubectl apply -f cluster/config/rbac.yaml
+kubectl apply -f cluster/config/operator.yaml
 
 # 3. 创建 RedisCluster CR
-kubectl apply -f config/examples/dev-cluster.yaml
+kubectl apply -f cluster/config/examples/dev-cluster.yaml
 
 # 4. 查看状态
 kubectl get rediscluster -o yaml
@@ -145,7 +146,7 @@ Operator 通过 reconcile loop 管理 CR 生命周期，状态机如下：
 
 ```bash
 # 部署 clusterd
-kubectl apply -f config/clusterd.yaml
+kubectl apply -f cluster/config/clusterd.yaml
 
 # 通过 gRPC 调用（需要 grpcurl 或自建客户端）
 grpcurl -plaintext <clusterd-ip>:50051 list
@@ -198,7 +199,7 @@ gRPC 提供的 API：
 
 ## 配置
 
-默认配置在 [config/conf.yaml](config/conf.yaml)，支持环境变量覆盖：
+默认配置在 [config/conf.yaml](cluster/config/conf.yaml)，支持环境变量覆盖：
 
 | 环境变量 | 说明 |
 |----------|------|

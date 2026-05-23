@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	pb "redisClusterManager/proto"
+	pb "redisClusterManager/cluster/proto"
 	"redisClusterManager/cache/peer"
 )
 
