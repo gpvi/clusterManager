@@ -17,6 +17,11 @@ func SetConfig(cfg *config.RuntimeConfig) {
 var backend string
 var containerdSocket string
 var dbPath string
+var clusterName string
+var shardCount int
+var nodesPerShard int
+var redisPort uint16
+var additionalShards int
 
 var RootCmd = &cobra.Command{
 	Use:   "cluster",

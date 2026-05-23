@@ -15,19 +15,6 @@ import (
 	"redisClusterManager/cluster/utils"
 )
 
-type RedisClusterConfig struct {
-	NodesPerShard int    `yaml:"nodes_per_shard"`
-	LegacyReplica int    `yaml:"replica,omitempty"`
-	Port          uint16 `yaml:"port"`
-}
-
-func (c RedisClusterConfig) EffectiveNodesPerShard() int {
-	if c.NodesPerShard != 0 {
-		return c.NodesPerShard
-	}
-	return c.LegacyReplica
-}
-
 func CreateClusterAction(ctx context.Context, cfg *config.RuntimeConfig, shardCount int, nodesPerShard int, clusterName string) error {
 	nodeManager, err := backend.NewNodeManager(cfg)
 	if err != nil {
@@ -76,7 +63,7 @@ func CreateClusterAction(ctx context.Context, cfg *config.RuntimeConfig, shardCo
 		Retry: 1,
 		Do: func(ctx context.Context) error {
 			sum := shardCount * nodesPerShard
-			return cm.CreateSource(ctx, clusterName, sum)
+			return cm.CreatePodsForCluster(ctx, clusterName, sum)
 		},
 		Undo: func(ctx context.Context) error {
 			return nodeManager.DeleteResources(ctx, clusterName)
@@ -140,7 +127,7 @@ func CreateClusterAction(ctx context.Context, cfg *config.RuntimeConfig, shardCo
 			if utils.FileExists(path) {
 				os.Remove(path)
 			}
-			return utils.WriteToYAMLFile(path, RedisClusterConfig{
+			return utils.WriteToYAMLFile(path, config.RedisClusterConfig{
 				NodesPerShard: cm.NodesPerShard,
 				Port:          cfg.RedisContainerPort,
 			})

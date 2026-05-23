@@ -8,11 +8,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var shardCount int
-var nodesPerShard int
-var clusterName string
-var redisPort uint16
-
 var createCmd = &cobra.Command{
 	Use:   "create",
 	Short: "create a Redis cluster",

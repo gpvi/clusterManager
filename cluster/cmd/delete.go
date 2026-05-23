@@ -25,21 +25,19 @@ var deleteCmd = &cobra.Command{
 	},
 }
 
-func DeleteHelpFunc(cmd *cobra.Command, args []string) {
-	fmt.Println("自定义帮助信息:")
-	fmt.Println("该命令用于删除指定名称的集群及其所有相关容器。")
-	fmt.Println()
-	fmt.Println("示例用法:")
-	fmt.Printf("  %s --clusterName <cluster-name>\n", cmd.Use)
-	fmt.Println()
-	fmt.Println("可用标志:")
-	cmd.Flags().VisitAll(func(flag *pflag.Flag) {
-		fmt.Printf("  --%s\n", flag.Name)
-	})
-}
-
 func init() {
-	deleteCmd.SetHelpFunc(DeleteHelpFunc)
+	deleteCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		fmt.Println("自定义帮助信息:")
+		fmt.Println("该命令用于删除指定名称的集群及其所有相关容器。")
+		fmt.Println()
+		fmt.Println("示例用法:")
+		fmt.Printf("  %s --clusterName <cluster-name>\n", cmd.Use)
+		fmt.Println()
+		fmt.Println("可用标志:")
+		cmd.Flags().VisitAll(func(flag *pflag.Flag) {
+			fmt.Printf("  --%s\n", flag.Name)
+		})
+	})
 	deleteCmd.Flags().StringVarP(&clusterName, "clusterName", "n", "", "指定集群的名称")
 	RootCmd.AddCommand(deleteCmd)
 }

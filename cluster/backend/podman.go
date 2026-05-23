@@ -15,33 +15,23 @@ import (
 )
 
 type PodmanNodeManager struct {
-	config      *config.RuntimeConfig
-	IPToNode    map[string]*model.RuntimeNode
-	HostToNode  map[string]*model.RuntimeNode
-	IDToNode    map[string]*model.RuntimeNode
-	Nodes       []*model.RuntimeNode
-	Num         int
+	config *config.RuntimeConfig
+	base   baseNodeManager
 }
 
 func NewPodmanNodeManager(cfg *config.RuntimeConfig) *PodmanNodeManager {
 	return &PodmanNodeManager{
-		config:     cfg,
-		IPToNode:   make(map[string]*model.RuntimeNode),
-		HostToNode: make(map[string]*model.RuntimeNode),
-		IDToNode:   make(map[string]*model.RuntimeNode),
-		Nodes:      make([]*model.RuntimeNode, 0, 10),
-		Num:        0,
+		config: cfg,
+		base: baseNodeManager{
+			IPToNode:   make(map[string]*model.RuntimeNode),
+			HostToNode: make(map[string]*model.RuntimeNode),
+			IDToNode:   make(map[string]*model.RuntimeNode),
+		},
 	}
 }
 
 func (c *PodmanNodeManager) AddRuntimeNode(node *model.RuntimeNode) {
-	c.IPToNode[node.ConIp] = node
-	c.IDToNode[node.ID] = node
-	c.Nodes = append(c.Nodes, node)
-	c.Num = len(c.Nodes)
-	if node.Hostname != "" {
-		c.HostToNode[node.Hostname] = node
-	}
+	c.base.addNode(node)
 	if node.Address.ClientAddr == "" {
 		node.Address = model.NodeAddress{
 			ClusterAddr: fmt.Sprintf("%s:%d", node.ConIp, node.ConPort),
@@ -50,40 +40,17 @@ func (c *PodmanNodeManager) AddRuntimeNode(node *model.RuntimeNode) {
 	}
 }
 
-func (c *PodmanNodeManager) HasCluster(clusterName string) bool {
-	for _, node := range c.Nodes {
-		if node.ClusterName == clusterName {
-			return true
-		}
-	}
-	return false
-}
+func (c *PodmanNodeManager) HasCluster(clusterName string) bool   { return c.base.hasCluster(clusterName) }
+func (c *PodmanNodeManager) GetNodes() []*model.RuntimeNode        { return c.base.getNodes() }
+func (c *PodmanNodeManager) GetNodeByIP(ip string) *model.RuntimeNode { return c.base.getNodeByIP(ip) }
+func (c *PodmanNodeManager) GetNodeByHost(host string) *model.RuntimeNode { return c.base.getNodeByHost(host) }
+func (c *PodmanNodeManager) GetNodeCount() int                     { return c.base.getNodeCount() }
 
-func (c *PodmanNodeManager) GetNodes() []*model.RuntimeNode   { return c.Nodes }
-func (c *PodmanNodeManager) GetNodeByIP(ip string) *model.RuntimeNode { return c.IPToNode[ip] }
-func (c *PodmanNodeManager) GetNodeByHost(host string) *model.RuntimeNode {
-	if c.HostToNode != nil {
-		if node, ok := c.HostToNode[host]; ok {
-			return node
-		}
-	}
-	return c.IPToNode[host]
-}
-func (c *PodmanNodeManager) GetNodeCount() int           { return c.Num }
-
-func (c *PodmanNodeManager) CountByCluster(clusterName string) int {
-	count := 0
-	for _, node := range c.Nodes {
-		if node.ClusterName == clusterName {
-			count++
-		}
-	}
-	return count
-}
+func (c *PodmanNodeManager) CountByCluster(clusterName string) int { return c.base.countByCluster(clusterName) }
 
 func (c *PodmanNodeManager) CreatePods(ctx context.Context, nodeNum int, clusterName string) error {
-	start := c.Num + 1
-	end := c.Num + nodeNum
+	start := c.base.Num + 1
+	end := c.base.Num + nodeNum
 
 	port := int(c.config.RedisContainerPort)
 	busPort := port + 10000
@@ -227,11 +194,7 @@ func (c *PodmanNodeManager) cleanupContainers(clusterName string, fromIdx, toIdx
 }
 
 func (c *PodmanNodeManager) ListPodsByCluster(ctx context.Context, clusterName string) error {
-	c.Nodes = c.Nodes[:0]
-	c.IPToNode = make(map[string]*model.RuntimeNode)
-	c.HostToNode = make(map[string]*model.RuntimeNode)
-	c.IDToNode = make(map[string]*model.RuntimeNode)
-	c.Num = 0
+	c.base.resetMaps()
 
 	filter := fmt.Sprintf("name=%s-redis", clusterName)
 	cmd := exec.CommandContext(ctx, "podman", "ps", "--filter", filter, "--format", "{{.Names}}")
@@ -280,13 +243,7 @@ func (c *PodmanNodeManager) ListPodsByCluster(ctx context.Context, clusterName s
 			nodeIndex, _ := strconv.Atoi(idxStr)
 			node.Hostname = c.config.BuildHostname(clusterName, nodeIndex)
 		}
-		c.Nodes = append(c.Nodes, node)
-		c.IDToNode[node.ID] = node
-		c.IPToNode[node.ConIp] = node
-		if node.Hostname != "" {
-			c.HostToNode[node.Hostname] = node
-		}
-		c.Num++
+		c.base.addNode(node)
 	}
 
 	return nil

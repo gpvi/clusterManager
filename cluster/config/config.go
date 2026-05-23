@@ -5,19 +5,12 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"redisClusterManager/cluster/model"
 	"redisClusterManager/cluster/utils"
 	"runtime"
 	"strconv"
 	"strings"
 )
-
-// CacheInvalidator is called when Redis slot migration completes,
-// so the cache layer can evict stale entries for the affected key range.
-type CacheInvalidator interface {
-	InvalidateSlots(start, end int)
-}
-
-const TotalSlots int = 16384
 
 type RuntimeConfig struct {
 	ProjectRoot         string
@@ -36,7 +29,7 @@ type RuntimeConfig struct {
 	DNS                 *DNSConfig
 	// CacheInvalidator is set by the cache subsystem when running in-process.
 	// If non-nil, it is registered with each ClusterManager created by action functions.
-	CacheInvalidator CacheInvalidator
+	CacheInvalidator model.CacheInvalidator
 }
 
 type Config struct {
@@ -84,6 +77,16 @@ type DNSConfig struct {
 	Enabled        bool   `yaml:"enabled"`
 	Domain         string `yaml:"domain"`
 	NamingTemplate string `yaml:"naming_template"`
+}
+
+// RedisClusterConfig holds the per-cluster configuration persisted alongside runtime state.
+type RedisClusterConfig struct {
+	NodesPerShard int    `yaml:"nodes_per_shard"`
+	Port          uint16 `yaml:"port"`
+}
+
+func (c RedisClusterConfig) EffectiveNodesPerShard() int {
+	return c.NodesPerShard
 }
 
 func (c *Config) ReadConfig() (*RuntimeConfig, error) {

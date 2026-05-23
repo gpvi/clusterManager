@@ -8,8 +8,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var additionalShards int
-
 var scaleCmd = &cobra.Command{
 	Use:   "scale",
 	Short: "scale  cluster",

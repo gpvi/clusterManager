@@ -44,16 +44,6 @@ func ExecuteClusterCommand(ctx context.Context, client *redis.Client, args ...in
 	return result, nil
 }
 
-// ParseInt64 简单的字符串转 int64
-func ParseInt64(value string) int64 {
-	var result int64
-	_, err := fmt.Sscanf(value, "%d", &result)
-	if err != nil {
-		fmt.Printf("Error parsing int64: %v\n", err)
-	}
-	return result
-}
-
 // WriteToYAMLFile 将数据写入 YAML 文件
 func WriteToYAMLFile(fileName string, data interface{}) error {
 	// 将结构体转换为 YAML 字符串并格式化

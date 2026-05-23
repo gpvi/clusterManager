@@ -45,11 +45,11 @@ func (n *RuntimeNode) ClusterMeetAddr() string {
 
 // CreateRedisClient creates a Redis client for management commands on this node.
 func (n *RuntimeNode) CreateRedisClient() (*redis.Client, error) {
-	return CreateRedisClient(nil, n.ClientConnAddr())
+	return CreateRedisClient(n.ClientConnAddr())
 }
 
 // CreateRedisClient creates a Redis client connected to the given address.
-func CreateRedisClient(_ interface{}, addr string) (*redis.Client, error) {
+func CreateRedisClient(addr string) (*redis.Client, error) {
 	client := redis.NewClient(&redis.Options{
 		Addr: addr,
 	})

@@ -21,7 +21,7 @@ func ScaleClusterAction(ctx context.Context, cfg *config.RuntimeConfig, addition
 	}
 
 	runtimeConfigPath := cfg.ClusterRuntimeConfigPath(clusterName)
-	var configFromFile RedisClusterConfig
+	var configFromFile config.RedisClusterConfig
 	if err := utils.ReadFromYAMLFile(runtimeConfigPath, &configFromFile); err != nil {
 		return fmt.Errorf("read YAML: %w", err)
 	}
@@ -86,7 +86,7 @@ func ScaleClusterAction(ctx context.Context, cfg *config.RuntimeConfig, addition
 		Name:  "create-containers",
 		Retry: 1,
 		Do: func(ctx context.Context) error {
-			return cm.CreateSource(ctx, clusterName, additionalShards*nodesPerShard)
+			return cm.CreatePodsForCluster(ctx, clusterName, additionalShards*nodesPerShard)
 		},
 		Undo: func(ctx context.Context) error {
 			// Delete only the newly created pods.
@@ -173,7 +173,7 @@ func ScaleClusterAction(ctx context.Context, cfg *config.RuntimeConfig, addition
 		Retry: 1,
 		Do: func(ctx context.Context) error {
 			fmt.Println("starting slot migration...")
-			return cm.MigratesSlotsToEmptyNode(ctx, clusterName)
+			return cm.MigrateSlotsToEmptyNode(ctx, clusterName)
 		},
 	})
 
