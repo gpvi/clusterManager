@@ -7,11 +7,13 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-redis/redis/v8"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 )
@@ -165,6 +167,12 @@ func (c *K8sNodeManager) CreatePods(ctx context.Context, nodeNum int, clusterNam
 		return fmt.Errorf("failed to create ConfigMap: %w", err)
 	}
 
+	// Create a Headless Service so that pods are DNS-resolvable
+	// via <pod-name>.<clusterName>-svc.<namespace>.svc.cluster.local.
+	if err := c.createHeadlessService(ctx, clusterName); err != nil {
+		return fmt.Errorf("failed to create Headless Service: %w", err)
+	}
+
 	podTemplate := func(i int) *corev1.Pod {
 		podName := fmt.Sprintf("%s-redis-%d", clusterName, i)
 		return &corev1.Pod{
@@ -179,6 +187,8 @@ func (c *K8sNodeManager) CreatePods(ctx context.Context, nodeNum int, clusterNam
 				},
 			},
 			Spec: corev1.PodSpec{
+				Subdomain: clusterName + "-svc",
+				Hostname:  podName,
 				Containers: []corev1.Container{
 					{
 						Name:  "redis",
@@ -227,8 +237,9 @@ func (c *K8sNodeManager) CreatePods(ctx context.Context, nodeNum int, clusterNam
 
 	// Phase 1: create pods concurrently
 	type createResult struct {
-		name string
-		err  error
+		name  string
+		index int
+		err   error
 	}
 	createCh := make(chan createResult, nodeNum)
 	for i := start; i <= end; i++ {
@@ -239,17 +250,21 @@ func (c *K8sNodeManager) CreatePods(ctx context.Context, nodeNum int, clusterNam
 				createCh <- createResult{err: fmt.Errorf("failed to create pod %s: %w", pod.Name, err)}
 				return
 			}
-			createCh <- createResult{name: created.Name}
+			createCh <- createResult{name: created.Name, index: idx}
 		}(i)
 	}
 
-	podNames := make([]string, 0, nodeNum)
+	type podInfo struct {
+		name  string
+		index int
+	}
+	podInfos := make([]podInfo, 0, nodeNum)
 	for i := 0; i < nodeNum; i++ {
 		r := <-createCh
 		if r.err != nil {
 			return r.err
 		}
-		podNames = append(podNames, r.name)
+		podInfos = append(podInfos, podInfo{name: r.name, index: r.index})
 		fmt.Printf("Pod created: %s\n", r.name)
 	}
 
@@ -258,9 +273,9 @@ func (c *K8sNodeManager) CreatePods(ctx context.Context, nodeNum int, clusterNam
 		node RuntimeNode
 		err  error
 	}
-	readyCh := make(chan readyResult, len(podNames))
-	for _, podName := range podNames {
-		go func(name string) {
+	readyCh := make(chan readyResult, len(podInfos))
+	for _, info := range podInfos {
+		go func(name string, idx int) {
 			var pod *corev1.Pod
 			var err error
 			deadline := time.Now().Add(podReadyTimeout)
@@ -306,13 +321,13 @@ func (c *K8sNodeManager) CreatePods(ctx context.Context, nodeNum int, clusterNam
 			}
 			// Only set hostname when DNS is enabled.
 			if c.config.DNSEnabled() {
-				node.Hostname = pod.Name
+				node.Hostname = c.config.BuildHostname(clusterName, idx)
 			}
 			readyCh <- readyResult{node: node}
-		}(podName)
+		}(info.name, info.index)
 	}
 
-	for range podNames {
+	for range podInfos {
 		r := <-readyCh
 		if r.err != nil {
 			return r.err
@@ -416,6 +431,38 @@ func (c *K8sNodeManager) createConfigMap(ctx context.Context, clusterName, confi
 	return nil
 }
 
+func (c *K8sNodeManager) createHeadlessService(ctx context.Context, clusterName string) error {
+	svcName := clusterName + "-svc"
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      svcName,
+			Namespace: c.namespace,
+			Labels: map[string]string{
+				"app":     "redis",
+				"cluster": clusterName,
+			},
+		},
+		Spec: corev1.ServiceSpec{
+			ClusterIP: "None", // Headless
+			Ports: []corev1.ServicePort{
+				{
+					Port:       int32(c.config.RedisContainerPort),
+					TargetPort: intstr.FromInt(int(c.config.RedisContainerPort)),
+				},
+			},
+			Selector: map[string]string{
+				"app":     "redis",
+				"cluster": clusterName,
+			},
+		},
+	}
+	_, err := c.clientset.CoreV1().Services(c.namespace).Create(ctx, svc, metav1.CreateOptions{})
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return err
+	}
+	return nil
+}
+
 func (c *K8sNodeManager) ListPodsByCluster(ctx context.Context, clusterName string) error {
 	// Reset to avoid double-counting on repeated calls
 	c.Nodes = c.Nodes[:0]
@@ -459,7 +506,10 @@ func (c *K8sNodeManager) ListPodsByCluster(ctx context.Context, clusterName stri
 			ClusterName: pod.Labels["cluster-name"],
 		}
 		if c.config.DNSEnabled() {
-			node.Hostname = pod.Name
+			// Reconstruct the node index from the pod name "{clusterName}-redis-{N}".
+			idxStr := strings.TrimPrefix(pod.Name, clusterName+"-redis-")
+			nodeIndex, _ := strconv.Atoi(idxStr)
+			node.Hostname = c.config.BuildHostname(clusterName, nodeIndex)
 		}
 		c.Nodes = append(c.Nodes, &node)
 		c.IDToNode[node.ID] = &node
@@ -488,6 +538,14 @@ func (c *K8sNodeManager) DeleteResources(ctx context.Context, clusterName string
 		} else {
 			fmt.Printf("Service deleted: %s\n", svc.Name)
 		}
+	}
+
+	// Delete the Headless Service (not matched by the label selector above).
+	svcName := clusterName + "-svc"
+	if err := c.clientset.CoreV1().Services(c.namespace).Delete(ctx, svcName, metav1.DeleteOptions{}); err != nil {
+		fmt.Printf("Error deleting headless service %s: %v\n", svcName, err)
+	} else {
+		fmt.Printf("Headless Service deleted: %s\n", svcName)
 	}
 
 	podList, err := c.clientset.CoreV1().Pods(c.namespace).List(ctx, metav1.ListOptions{

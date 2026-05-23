@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
@@ -188,7 +189,7 @@ func (c *ContainerdNodeManager) CreatePods(ctx context.Context, nodeNum int, clu
 		}
 		// Only set hostname when DNS is enabled.
 		if c.config.DNSEnabled() {
-			node.Hostname = containerName
+			node.Hostname = c.config.BuildHostname(clusterName, i)
 		}
 		c.AddRuntimeNode(&node)
 	}
@@ -303,7 +304,7 @@ func (c *ContainerdNodeManager) ListPodsByCluster(ctx context.Context, clusterNa
 			ClusterName: info.Labels["cluster-name"],
 		}
 		if c.config.DNSEnabled() {
-			node.Hostname = container.ID()
+			node.Hostname = c.config.BuildHostname(clusterName, nodeIndex)
 		}
 		c.Nodes = append(c.Nodes, node)
 		c.IDToNode[node.ID] = node

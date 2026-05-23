@@ -8,6 +8,7 @@ import (
 	"redisClusterManager/utils"
 	"runtime"
 	"strconv"
+	"strings"
 )
 
 const TotalSlots int = 16384
@@ -491,4 +492,23 @@ func (cfg *RuntimeConfig) DNSNamingTemplate() string {
 		return ""
 	}
 	return cfg.DNS.NamingTemplate
+}
+
+// BuildHostname expands the DNS naming template for a given cluster node.
+// Returns empty string when DNS is disabled. Falls back to a simple
+// "{clusterName}-redis-{index}" pattern when the template is empty.
+func (cfg *RuntimeConfig) BuildHostname(clusterName string, index int) string {
+	if cfg.DNS == nil || !cfg.DNS.Enabled {
+		return ""
+	}
+	// Fallback if template is empty or invalid: use simple pattern
+	if cfg.DNS.NamingTemplate == "" {
+		return fmt.Sprintf("%s-redis-%d", clusterName, index)
+	}
+	// Simple string replacement for known placeholders
+	name := cfg.DNS.NamingTemplate
+	name = strings.ReplaceAll(name, "{{.ClusterName}}", clusterName)
+	name = strings.ReplaceAll(name, "{{.Index}}", strconv.Itoa(index))
+	name = strings.ReplaceAll(name, "{{.Namespace}}", cfg.KubeNamespace)
+	return name
 }

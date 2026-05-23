@@ -4,6 +4,7 @@
 *.swp
 *.swo
 *~
+.DS_Store
 
 # Go build
 .gocache/
@@ -40,4 +41,3 @@ Thumbs.db
 
 # Vendor
 vendor/
-
