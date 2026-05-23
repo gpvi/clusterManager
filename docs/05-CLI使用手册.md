@@ -16,6 +16,7 @@ go build -tags containerd -o cluster .
 cluster create   创建 Redis Cluster
 cluster scale    为已有集群新增 shard（含并发 slot 迁移）
 cluster delete   删除指定集群及其容器资源
+cluster cache    启动分布式缓存节点（gRPC + gossip）
 ```
 
 ## 3. 全局参数
@@ -118,7 +119,48 @@ slot migration: 8192 slots across 1 source groups (16 workers each)
 - 删除运行时状态文件和目录
 - SQLite 中标记删除
 
-## 7. 各后端差异
+## 7. 缓存节点
+
+### 基本用法
+
+```bash
+./cluster cache --port=8001 --gossip=9001
+```
+
+### 参数
+
+| 参数 | 简写 | 类型 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `--port` | `-p` | int | `8001` | Cache gRPC 端口 |
+| `--gossip` | `-g` | int | `9001` | Gossip 协议端口（memberlist） |
+| `--api` | | bool | `false` | 启用 HTTP API 网关（:9999） |
+| `--seeds` | | string | | 种子节点地址（逗号分隔） |
+
+### 示例
+
+```bash
+# 启动独立缓存节点
+./cluster cache --port=8001 --gossip=9001
+
+# 启动带 API 网关的缓存节点并加入集群
+./cluster cache --port=8002 --gossip=9002 --api --seeds=10.0.1.1:8001,10.0.1.2:8001
+
+# 完整 Redis + Cache 栈
+./cluster create -n mycluster -s 3 -r 2    # 创建 Redis 集群
+./cluster cache --port=8001 --gossip=9001   # 启动缓存节点
+```
+
+### 缓存节点架构
+
+- 每个缓存节点运行 3 个服务：
+  - gRPC 服务器（节点间数据同步）
+  - HTTP 健康检查（端口 = gRPC 端口 + 100）
+  - 可选 HTTP API 网关（:9999）
+- 节点通过 SWIM gossip 协议（memberlist）互相发现
+- 热键自动检测并复制到相邻节点
+- 缓存未命中时依次穿透到 Redis 集群（L2）和数据源（L3）
+
+## 8. 各后端差异
 
 | 特性 | Podman | Kubernetes | Containerd |
 |------|--------|------------|------------|
@@ -128,7 +170,7 @@ slot migration: 8192 slots across 1 source groups (16 workers each)
 | 物理隔离 | 是（bridge 网络） | 是（Pod 网络） | 否（共享 host 网络） |
 | 编译要求 | 默认 | 默认 | `-tags containerd` |
 
-## 8. 废弃参数
+## 9. 废弃参数
 
 以下参数仍可用但已废弃：
 
