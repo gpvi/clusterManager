@@ -36,14 +36,14 @@ redisStudy
    └─ utils.go
 ```
 用例图
-![img.png](img/useCase.png)
+![img.png](../img/useCase.png)
 
 
 主要类关系
 
-![alt text](img/image.png)
-![alt text](img/image-1.png)
-![img.png](img/containerNode.png)
+![alt text](../img/image.png)
+![alt text](../img/image-1.png)
+![img.png](../img/containerNode.png)
 
 [//]: # (```plantuml)
 

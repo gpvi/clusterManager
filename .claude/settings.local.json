@@ -72,7 +72,11 @@
       "Bash(sqlite3 runtime/cluster.db \"SELECT cluster_name, operation, success, created_at FROM operations ORDER BY id DESC LIMIT 3;\")",
       "Bash(sqlite3 runtime/cluster.db \"DELETE FROM clusters WHERE name NOT IN \\(SELECT DISTINCT cluster_name FROM containers\\); SELECT COUNT\\(*\\) FROM clusters;\")",
       "Bash(sqlite3 runtime/cluster.db \"DELETE FROM operations WHERE cluster_name NOT IN \\(SELECT name FROM clusters\\);\")",
-      "Read(//e/Projects/Cache/**)"
+      "Read(//e/Projects/Cache/**)",
+      "Bash(git push *)",
+      "Bash(git config *)",
+      "Bash(git branch *)",
+      "Bash(git remote *)"
     ]
   }
 }
