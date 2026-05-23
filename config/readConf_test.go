@@ -26,7 +26,6 @@ type Config struct {
 	} `yaml:"podman"`
 	Configs struct {
 		SaveFileName      string `yaml:"save_file_name"`
-		ContainerInfoFile string `yaml:"container_info_file_name"`
 		ImageName         string `yaml:"image_name"`
 		RedisPort         uint16 `yaml:"redis_port"`
 	} `yaml:"configs"`
@@ -61,7 +60,6 @@ func (c *Config) PrintConfig() {
 	fmt.Println("  NetworkName:", c.Podman.NetworkName)
 	fmt.Println("Configs:")
 	fmt.Println("  SaveFileName:", c.Configs.SaveFileName)
-	fmt.Println("  ContainerInfoFile:", c.Configs.ContainerInfoFile)
 	fmt.Println("  ImageName:", c.Configs.ImageName)
 	fmt.Println("  RedisPort:", c.Configs.RedisPort)
 }

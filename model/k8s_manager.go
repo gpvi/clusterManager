@@ -2,7 +2,6 @@ package model
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -53,17 +52,6 @@ func (node *RuntimeNode) ClusterMeetAddr() string {
 		return fmt.Sprintf("%s:%d", node.Hostname, node.ConPort)
 	}
 	return fmt.Sprintf("%s:%d", node.ConIp, node.ConPort)
-}
-
-// ContainerInfo is the JSON-serializable view of a RuntimeNode for persistence.
-type ContainerInfo struct {
-	HostIP      string `json:"host_ip"`
-	HostPort    uint16 `json:"host_port"`
-	ConIp       string `json:"con_ip"`
-	ConPort     uint16 `json:"con_port"`
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	ClusterName string `json:"cluster_name"`
 }
 
 func (node *RuntimeNode) CreateRedisClient() (*redis.Client, error) {
@@ -581,39 +569,6 @@ func (c *K8sNodeManager) DeleteResources(ctx context.Context, clusterName string
 
 	return nil
 }
-func (c *K8sNodeManager) SaveToJSON(filename string) error {
-	return saveNodesToJSON(filename, c.Nodes)
-}
-func saveNodesToJSON(filename string, nodes []*RuntimeNode) error {
-	var containerInfos []ContainerInfo
-
-	for _, node := range nodes {
-		containerInfos = append(containerInfos, ContainerInfo{
-			HostIP:      node.HostIP,
-			HostPort:    node.HostPort,
-			ConIp:       node.ConIp,
-			ConPort:     node.ConPort,
-			ID:          node.ID,
-			Name:        node.Name,
-			ClusterName: node.ClusterName,
-		})
-	}
-
-	data, err := json.MarshalIndent(containerInfos, "", "  ")
-	if err != nil {
-		return fmt.Errorf("error marshaling JSON: %w", err)
-	}
-
-	if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
-		return fmt.Errorf("error creating state dir: %w", err)
-	}
-
-	if err := os.WriteFile(filename, data, 0644); err != nil {
-		return fmt.Errorf("error writing to file: %w", err)
-	}
-	return nil
-}
-
 func CreateRedisClient(ctx context.Context, addr string) (*redis.Client, error) {
 	client := redis.NewClient(&redis.Options{
 		Addr: addr,

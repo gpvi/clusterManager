@@ -13,7 +13,6 @@ type PodManager interface {
 	GetNodeByIP(ip string) *RuntimeNode
 	GetNodeByHost(host string) *RuntimeNode
 	GetNodeCount() int
-	SaveToJSON(filename string) error
 }
 
 // CacheInvalidator is called when Redis slot migration completes,

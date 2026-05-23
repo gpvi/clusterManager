@@ -16,7 +16,6 @@ kubernetes:
 
 configs:
   save_file_name: "run_time_config.yaml"
-  container_info_file_name: "containers.json"
   image_name: "redis:7-alpine"
   redis_port: 6379
 

@@ -321,7 +321,3 @@ func (c *PodmanNodeManager) DeleteResources(ctx context.Context, clusterName str
 	}
 	return nil
 }
-
-func (c *PodmanNodeManager) SaveToJSON(filename string) error {
-	return saveNodesToJSON(filename, c.Nodes)
-}

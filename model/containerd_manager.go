@@ -339,7 +339,3 @@ func (c *ContainerdNodeManager) DeleteResources(ctx context.Context, clusterName
 	}
 	return nil
 }
-
-func (c *ContainerdNodeManager) SaveToJSON(filename string) error {
-	return saveNodesToJSON(filename, c.Nodes)
-}
