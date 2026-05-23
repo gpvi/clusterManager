@@ -31,9 +31,9 @@ func CreateClusterAction(ctx context.Context, cfg *model.RuntimeConfig, shardCou
 	if err != nil {
 		return fmt.Errorf("create node manager fail: %v", err)
 	}
-	clusterManager := model.NewClusterManager(nodesPerShard, nodeManager)
+	cm := model.NewClusterManager(nodesPerShard, nodeManager)
 	if cfg.CacheInvalidator != nil {
-		clusterManager.SetCacheInvalidator(cfg.CacheInvalidator)
+		cm.SetCacheInvalidator(cfg.CacheInvalidator)
 	}
 
 	var persister pipeline.Persister
@@ -44,7 +44,7 @@ func CreateClusterAction(ctx context.Context, cfg *model.RuntimeConfig, shardCou
 	}
 	p := pipeline.New("create-cluster-"+clusterName, persister)
 
-	// Step 1: validate
+	// ---- Step 1: validate ----
 	p.Add(pipeline.Step{
 		Name: "validate",
 		Do: func(ctx context.Context) error {
@@ -68,42 +68,88 @@ func CreateClusterAction(ctx context.Context, cfg *model.RuntimeConfig, shardCou
 		},
 	})
 
-	// Step 2: create-pods
+	// ---- Step 2: create-containers ----
 	p.Add(pipeline.Step{
-		Name:    "create-pods",
-		Retry:   1,
+		Name:  "create-containers",
+		Retry: 1,
 		Do: func(ctx context.Context) error {
-			return clusterManager.Bootstrap(ctx, shardCount, clusterName)
+			sum := shardCount * nodesPerShard
+			return cm.CreateSource(ctx, clusterName, sum)
 		},
 		Undo: func(ctx context.Context) error {
 			return nodeManager.DeleteResources(ctx, clusterName)
 		},
 	})
 
-	// Step 3: persist-config — save runtime YAML
+	// ---- Step 3: meet-nodes ----
+	p.Add(pipeline.Step{
+		Name: "meet-nodes",
+		Do: func(ctx context.Context) error {
+			idx := findClusterNode(nodeManager, clusterName)
+			if idx < 0 {
+				return fmt.Errorf("no node found for cluster %s", clusterName)
+			}
+			cli, err := nodeManager.GetNodes()[idx].CreateRedisClient()
+			if err != nil {
+				return fmt.Errorf("create redis client fail: %w", err)
+			}
+			defer cli.Close()
+			return cm.MeetNodes(cli, ctx, clusterName)
+		},
+	})
+
+	// ---- Step 4: update-topology ----
+	p.Add(pipeline.Step{
+		Name: "update-topology",
+		Do: func(ctx context.Context) error {
+			idx := findClusterNode(nodeManager, clusterName)
+			if idx < 0 {
+				return fmt.Errorf("no node found for cluster %s", clusterName)
+			}
+			return cm.UpdateAfterMeet(ctx, nodeManager.GetNodes()[idx], clusterName)
+		},
+	})
+
+	// ---- Step 5: set-roles ----
+	p.Add(pipeline.Step{
+		Name: "set-roles",
+		Do: func(ctx context.Context) error {
+			return cm.SetAllNodeRole(ctx, clusterName)
+		},
+	})
+
+	// ---- Step 6: alloc-slots ----
+	p.Add(pipeline.Step{
+		Name: "alloc-slots",
+		Do: func(ctx context.Context) error {
+			return cm.AllocateSlots(ctx, clusterName)
+		},
+	})
+
+	// ---- Step 7: persist-config ----
 	p.Add(pipeline.Step{
 		Name: "persist-config",
 		Do: func(ctx context.Context) error {
 			dir := cfg.ClusterStateDir(clusterName)
 			if err := os.MkdirAll(dir, 0755); err != nil {
-				return fmt.Errorf("create state dir: %w", err)
+				return err
 			}
-			runtimePath := cfg.ClusterRuntimeConfigPath(clusterName)
-			if utils.FileExists(runtimePath) {
-				os.Remove(runtimePath)
+			path := cfg.ClusterRuntimeConfigPath(clusterName)
+			if utils.FileExists(path) {
+				os.Remove(path)
 			}
-			config := RedisClusterConfig{
-				NodesPerShard: clusterManager.NodesPerShard,
+			return utils.WriteToYAMLFile(path, RedisClusterConfig{
+				NodesPerShard: cm.NodesPerShard,
 				Port:          cfg.RedisContainerPort,
-			}
-			return utils.WriteToYAMLFile(runtimePath, config)
+			})
 		},
 		Undo: func(ctx context.Context) error {
-			return os.Remove(cfg.ClusterRuntimeConfigPath(clusterName))
+			os.Remove(cfg.ClusterRuntimeConfigPath(clusterName))
+			return nil
 		},
 	})
 
-	// Step 4: persist-db — save to SQLite
+	// ---- Step 8: persist-db ----
 	p.Add(pipeline.Step{
 		Name: "persist-db",
 		Do: func(ctx context.Context) error {
@@ -129,12 +175,14 @@ func CreateClusterAction(ctx context.Context, cfg *model.RuntimeConfig, shardCou
 					ClusterName: clusterName, Name: node.Name, ContainerID: node.ID,
 					HostIP: node.HostIP, HostPort: int(node.HostPort),
 					ContainerIP: node.ConIp, ContainerPort: int(node.ConPort),
-					NodeIndex: nodeIdx, Status: "running",
-					Hostname: node.Hostname,
+					NodeIndex: nodeIdx, Status: "running", Hostname: node.Hostname,
 				})
 			}
 			s.LogOperation(clusterName, "create",
 				fmt.Sprintf("shards=%d nodes_per_shard=%d", shardCount, nodesPerShard), true)
+			if persister != nil {
+				persister.DeletePipeline(p.Name)
+			}
 			return nil
 		},
 		Undo: func(ctx context.Context) error {
@@ -151,11 +199,11 @@ func CreateClusterAction(ctx context.Context, cfg *model.RuntimeConfig, shardCou
 		},
 	})
 
-	// Step 5: print-info
+	// ---- Step 9: print-info ----
 	p.Add(pipeline.Step{
 		Name: "print-info",
 		Do: func(ctx context.Context) error {
-			return clusterManager.PrintClusterNodesInfo(ctx)
+			return cm.PrintClusterNodesInfo(ctx)
 		},
 	})
 
@@ -164,4 +212,13 @@ func CreateClusterAction(ctx context.Context, cfg *model.RuntimeConfig, shardCou
 	}
 	fmt.Println("Create succeed!")
 	return nil
+}
+
+func findClusterNode(nm model.PodManager, clusterName string) int {
+	for i, node := range nm.GetNodes() {
+		if node.ClusterName == clusterName {
+			return i
+		}
+	}
+	return -1
 }

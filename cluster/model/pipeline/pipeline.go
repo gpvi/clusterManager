@@ -8,9 +8,10 @@ import (
 )
 
 // Persister is an optional interface for saving/loading pipeline step state.
-// If set on a Pipeline, completed steps are persisted and restored across runs.
 type Persister interface {
 	SavePipelineStep(pipelineName, stepName string) error
+	StartPipelineStep(pipelineName, stepName string) error
+	FailPipelineStep(pipelineName, stepName string) error
 	LoadPipelineSteps(pipelineName string) ([]string, error)
 	DeletePipeline(pipelineName string) error
 }
@@ -81,8 +82,15 @@ func (p *Pipeline) Run(ctx context.Context) error {
 			continue
 		}
 
+		if p.Persist != nil {
+			p.Persist.StartPipelineStep(p.Name, step.Name)
+		}
+
 		if err := p.executeStep(ctx, &step); err != nil {
 			log.Printf("[pipeline:%s] FAIL at step %d/%d (%s): %v", p.Name, i+1, len(p.Steps), step.Name, err)
+			if p.Persist != nil {
+				p.Persist.FailPipelineStep(p.Name, step.Name)
+			}
 			p.rollback(ctx, i)
 			return fmt.Errorf("pipeline %q step %q: %w", p.Name, step.Name, err)
 		}

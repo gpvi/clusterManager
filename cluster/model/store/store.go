@@ -79,8 +79,9 @@ func (s *Store) migrate() error {
 		id            INTEGER PRIMARY KEY AUTOINCREMENT,
 		pipeline_name TEXT NOT NULL,
 		step_name     TEXT NOT NULL,
-		status        TEXT NOT NULL DEFAULT 'completed',
-		created_at    TEXT NOT NULL,
+		status        TEXT NOT NULL DEFAULT 'running',
+		started_at    TEXT NOT NULL,
+		finished_at   TEXT,
 		UNIQUE(pipeline_name, step_name)
 	);
 
@@ -271,12 +272,35 @@ func (s *Store) ListOperations(clusterName string) ([]map[string]string, error) 
 	return res, nil
 }
 
-// SavePipelineStep records a completed pipeline step.
+// SavePipelineStep records a pipeline step with its current status.
 func (s *Store) SavePipelineStep(pipelineName, stepName string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
+	// Upsert: start tracking if new, mark finished if exists.
 	_, err := s.db.Exec(
-		`INSERT OR REPLACE INTO pipeline_runs (pipeline_name, step_name, status, created_at) VALUES (?, ?, 'completed', ?)`,
+		`INSERT INTO pipeline_runs (pipeline_name, step_name, status, started_at) VALUES (?, ?, 'completed', ?)
+		 ON CONFLICT(pipeline_name, step_name) DO UPDATE SET status='completed', finished_at=?`,
+		pipelineName, stepName, now, now,
+	)
+	return err
+}
+
+// StartPipelineStep marks a step as running (for progress tracking).
+func (s *Store) StartPipelineStep(pipelineName, stepName string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := s.db.Exec(
+		`INSERT OR IGNORE INTO pipeline_runs (pipeline_name, step_name, status, started_at) VALUES (?, ?, 'running', ?)`,
 		pipelineName, stepName, now,
+	)
+	return err
+}
+
+// FailPipelineStep marks a step as failed.
+func (s *Store) FailPipelineStep(pipelineName, stepName string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := s.db.Exec(
+		`INSERT INTO pipeline_runs (pipeline_name, step_name, status, started_at, finished_at) VALUES (?, ?, 'failed', ?, ?)
+		 ON CONFLICT(pipeline_name, step_name) DO UPDATE SET status='failed', finished_at=?`,
+		pipelineName, stepName, now, now, now,
 	)
 	return err
 }

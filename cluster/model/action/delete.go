@@ -25,24 +25,29 @@ func DeleteAllContainers(ctx context.Context, cfg *model.RuntimeConfig, clusterN
 	}
 	p := pipeline.New("delete-cluster-"+clusterName, persister)
 
-	// Step 1: delete-resources — remove containers/pods
+	// ---- Step 1: delete-config ----
 	p.Add(pipeline.Step{
-		Name: "delete-resources",
+		Name: "delete-config",
 		Do: func(ctx context.Context) error {
-			// Remove runtime config file first.
-			runtimeConfigPath := cfg.ClusterRuntimeConfigPath(clusterName)
-			if utils.FileExists(runtimeConfigPath) {
-				fmt.Printf("File %s exists, deleting...\n", runtimeConfigPath)
-				if err := os.Remove(runtimeConfigPath); err != nil {
-					return fmt.Errorf("delete config file: %w", err)
-				}
+			path := cfg.ClusterRuntimeConfigPath(clusterName)
+			if utils.FileExists(path) {
+				fmt.Printf("removing runtime config: %s\n", path)
+				return os.Remove(path)
 			}
-			return nodeManager.DeleteResources(ctx, clusterName)
+			return nil
 		},
-		Retry: 2,
 	})
 
-	// Step 2: persist-db — update SQLite records
+	// ---- Step 2: delete-resources ----
+	p.Add(pipeline.Step{
+		Name:  "delete-resources",
+		Retry: 2,
+		Do: func(ctx context.Context) error {
+			return nodeManager.DeleteResources(ctx, clusterName)
+		},
+	})
+
+	// ---- Step 3: persist-db ----
 	p.Add(pipeline.Step{
 		Name: "persist-db",
 		Do: func(ctx context.Context) error {
@@ -56,18 +61,21 @@ func DeleteAllContainers(ctx context.Context, cfg *model.RuntimeConfig, clusterN
 			defer s.Close()
 			s.DeleteCluster(clusterName)
 			s.LogOperation(clusterName, "delete", "removed all containers", true)
+			if persister != nil {
+				persister.DeletePipeline(p.Name)
+			}
 			return nil
 		},
 	})
 
-	// Step 3: cleanup-state — remove empty state directory
+	// ---- Step 4: cleanup-state ----
 	p.Add(pipeline.Step{
 		Name: "cleanup-state",
 		Do: func(ctx context.Context) error {
 			dir := cfg.ClusterStateDir(clusterName)
 			entries, err := os.ReadDir(dir)
 			if err != nil {
-				return nil // already gone, not an error
+				return nil // already gone
 			}
 			if len(entries) == 0 {
 				return os.Remove(dir)

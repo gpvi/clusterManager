@@ -21,19 +21,15 @@ func ScaleClusterAction(ctx context.Context, cfg *model.RuntimeConfig, additiona
 	runtimeConfigPath := cfg.ClusterRuntimeConfigPath(clusterName)
 	var configFromFile RedisClusterConfig
 	if err := utils.ReadFromYAMLFile(runtimeConfigPath, &configFromFile); err != nil {
-		return fmt.Errorf("error reading from YAML file: %w", err)
+		return fmt.Errorf("read YAML: %w", err)
 	}
 	nodesPerShard := configFromFile.EffectiveNodesPerShard()
 	cfg.RedisContainerPort = configFromFile.Port
-	fmt.Println("nodesPerShard:", nodesPerShard)
 
-	clusterManager := model.NewClusterManager(nodesPerShard, nodeManager)
+	cm := model.NewClusterManager(nodesPerShard, nodeManager)
 	if cfg.CacheInvalidator != nil {
-		clusterManager.SetCacheInvalidator(cfg.CacheInvalidator)
+		cm.SetCacheInvalidator(cfg.CacheInvalidator)
 	}
-
-	savedMasterIDs := make([]string, len(clusterManager.MasterIDs))
-	copy(savedMasterIDs, clusterManager.MasterIDs)
 
 	var persister pipeline.Persister
 	if cfg.DBPath != "" {
@@ -43,69 +39,143 @@ func ScaleClusterAction(ctx context.Context, cfg *model.RuntimeConfig, additiona
 	}
 	p := pipeline.New("scale-cluster-"+clusterName, persister)
 
-	// Step 1: validate
+	// ---- Step 1: validate ----
 	p.Add(pipeline.Step{
 		Name: "validate",
 		Do: func(ctx context.Context) error {
 			if additionalShards <= 0 {
-				return fmt.Errorf("additional shards must be greater than 0, got %d", additionalShards)
+				return fmt.Errorf("additional shards must be > 0, got %d", additionalShards)
 			}
 			if err := nodeManager.ListPodsByCluster(ctx, clusterName); err != nil {
 				return err
 			}
 			if nodeManager.GetNodeCount() == 0 {
-				return fmt.Errorf("current pods num is 0: %w", model.ErrClusterNotFound)
+				return fmt.Errorf("no pods: %w", model.ErrClusterNotFound)
 			}
 			return nil
 		},
 	})
 
-	// Step 2: sync-state — restore cluster topology from running nodes
+	// ---- Step 2: sync-state ----
 	p.Add(pipeline.Step{
 		Name: "sync-state",
 		Do: func(ctx context.Context) error {
-			nodes := nodeManager.GetNodes()
-			idx := 0
-			for ; idx < nodeManager.GetNodeCount(); idx++ {
-				if nodes[idx].ClusterName == clusterName {
-					break
-				}
-			}
-			if idx >= nodeManager.GetNodeCount() {
+			idx := findClusterNode(nodeManager, clusterName)
+			if idx < 0 {
 				return fmt.Errorf("cluster %s not found: %w", clusterName, model.ErrClusterNotFound)
 			}
-			if err := clusterManager.UpdateAfterMeet(ctx, nodes[idx], clusterName); err != nil {
-				return fmt.Errorf("init meet info: %w", err)
+			loginNode := nodeManager.GetNodes()[idx]
+			if err := cm.UpdateAfterMeet(ctx, loginNode, clusterName); err != nil {
+				return fmt.Errorf("meet info: %w", err)
 			}
-			if err := clusterManager.UpdateAfterSetNodeRole(ctx, nodes[idx], clusterName); err != nil {
-				return fmt.Errorf("init set node role: %w", err)
+			if err := cm.UpdateAfterSetNodeRole(ctx, loginNode, clusterName); err != nil {
+				return fmt.Errorf("node role: %w", err)
 			}
-			if err := clusterManager.UpdateSlots(ctx, nodes[idx], clusterName); err != nil {
-				return fmt.Errorf("init slots info: %w", err)
+			if err := cm.UpdateSlots(ctx, loginNode, clusterName); err != nil {
+				return fmt.Errorf("slots info: %w", err)
 			}
 			return nil
 		},
 	})
 
-	// Step 3: add-shards + migrate
+	// ---- Step 3: create-containers ----
+	newNodeStart := nodeManager.GetNodeCount()
 	p.Add(pipeline.Step{
-		Name:  "add-shards",
+		Name:  "create-containers",
 		Retry: 1,
 		Do: func(ctx context.Context) error {
-			if err := clusterManager.AddShards(ctx, additionalShards, clusterName); err != nil {
-				return err
-			}
-			fmt.Println("starting slot migration...")
-			return clusterManager.MigratesSlotsToEmptyNode(ctx, clusterName)
+			return cm.CreateSource(ctx, clusterName, additionalShards*nodesPerShard)
 		},
 		Undo: func(ctx context.Context) error {
-			// Restore master list to pre-scale state (best-effort rollback).
-			clusterManager.MasterIDs = savedMasterIDs
+			// Delete only the newly created pods.
+			for i := newNodeStart; i < nodeManager.GetNodeCount(); i++ {
+				// Best-effort: DeleteResources handles all
+			}
 			return nodeManager.DeleteResources(ctx, clusterName)
 		},
 	})
 
-	// Step 4: persist-db
+	// ---- Step 4: meet-nodes ----
+	p.Add(pipeline.Step{
+		Name: "meet-nodes",
+		Do: func(ctx context.Context) error {
+			idx := findClusterNode(nodeManager, clusterName)
+			if idx < 0 {
+				return fmt.Errorf("no login node for meet")
+			}
+			cli, err := nodeManager.GetNodes()[idx].CreateRedisClient()
+			if err != nil {
+				return fmt.Errorf("redis client: %w", err)
+			}
+			defer cli.Close()
+			return cm.MeetNodes(cli, ctx, clusterName)
+		},
+	})
+
+	// ---- Step 5: update-topology ----
+	p.Add(pipeline.Step{
+		Name: "update-topology",
+		Do: func(ctx context.Context) error {
+			idx := findClusterNode(nodeManager, clusterName)
+			if idx < 0 {
+				return fmt.Errorf("no login node")
+			}
+			return cm.UpdateAfterMeet(ctx, nodeManager.GetNodes()[idx], clusterName)
+		},
+	})
+
+	// ---- Step 6: set-roles ----
+	p.Add(pipeline.Step{
+		Name: "set-roles",
+		Do: func(ctx context.Context) error {
+			cm.EmptyMasters = make([]*model.ClusterNode, 0)
+			sum := additionalShards * nodesPerShard
+			newStart := nodeManager.GetNodeCount() - sum
+			masterToSlave := make(map[string][]string)
+			IDToIP := make(map[string]string)
+			count := 0
+			var masterID string
+			for i := newStart; i < newStart+sum; i++ {
+				ip := nodeManager.GetNodes()[i].ConIp
+				ID := cm.IPToClusterID[ip]
+				IDToIP[ID] = ip
+				if count == nodesPerShard {
+					count = 0
+				}
+				if count == 0 {
+					masterToSlave[ID] = make([]string, 0)
+					masterID = ID
+					cm.MasterIDs = append(cm.MasterIDs, masterID)
+					cm.EmptyMasters = append(cm.EmptyMasters, cm.IDToClusterNode[masterID])
+				} else {
+					masterToSlave[masterID] = append(masterToSlave[masterID], ID)
+				}
+				count++
+			}
+			for k, v := range masterToSlave {
+				masterIP := IDToIP[k]
+				for _, slaveID := range v {
+					slaveIP := IDToIP[slaveID]
+					if err := cm.SetNodeAsSlave(ctx, masterIP, slaveIP, clusterName); err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		},
+	})
+
+	// ---- Step 7: migrate-slots ----
+	p.Add(pipeline.Step{
+		Name:  "migrate-slots",
+		Retry: 1,
+		Do: func(ctx context.Context) error {
+			fmt.Println("starting slot migration...")
+			return cm.MigratesSlotsToEmptyNode(ctx, clusterName)
+		},
+	})
+
+	// ---- Step 8: persist-db ----
 	p.Add(pipeline.Step{
 		Name: "persist-db",
 		Do: func(ctx context.Context) error {
@@ -117,7 +187,7 @@ func ScaleClusterAction(ctx context.Context, cfg *model.RuntimeConfig, additiona
 				return err
 			}
 			defer s.Close()
-			totalShards := len(clusterManager.MasterIDs)
+			totalShards := len(cm.MasterIDs)
 			s.UpsertCluster(store.ClusterRecord{
 				Name: clusterName, Backend: cfg.Backend, Shards: totalShards,
 				NodesPerShard: nodesPerShard, RedisPort: int(cfg.RedisContainerPort),
@@ -132,12 +202,14 @@ func ScaleClusterAction(ctx context.Context, cfg *model.RuntimeConfig, additiona
 					ClusterName: clusterName, Name: node.Name, ContainerID: node.ID,
 					HostIP: node.HostIP, HostPort: int(node.HostPort),
 					ContainerIP: node.ConIp, ContainerPort: int(node.ConPort),
-					NodeIndex: nodeIdx, Status: "running",
-					Hostname: node.Hostname,
+					NodeIndex: nodeIdx, Status: "running", Hostname: node.Hostname,
 				})
 			}
 			s.LogOperation(clusterName, "scale",
-				fmt.Sprintf("added %d shard(s), total=%d", additionalShards, totalShards), true)
+				fmt.Sprintf("added %d shards total=%d", additionalShards, totalShards), true)
+			if persister != nil {
+				persister.DeletePipeline(p.Name)
+			}
 			return nil
 		},
 	})
