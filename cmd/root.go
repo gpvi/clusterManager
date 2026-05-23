@@ -2,20 +2,43 @@ package cmd
 
 import (
 	"fmt"
+	"redisClusterManager/model"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
+var appConfig *model.RuntimeConfig
+
+func SetConfig(cfg *model.RuntimeConfig) {
+	appConfig = cfg
+}
+
+var backend string
+var containerdSocket string
+var dbPath string
+
 var RootCmd = &cobra.Command{
 	Use:   "cluster",
 	Short: "命令行控制 cluster 的创建销毁与扩容",
 	Long: `Cluster CLI 工具用于管理和控制集群的创建、销毁与扩容。
-			用法示例:
-			cluster create  # 创建新的集群
-			cluster delete  # 删除集群
-			cluster scale   # 扩容集群
+				用法示例:
+				cluster create  # 创建新的集群
+				cluster delete  # 删除集群
+				cluster scale   # 扩容集群
 `,
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		if appConfig != nil && backend != "" {
+			appConfig.Backend = backend
+		}
+		if appConfig != nil && containerdSocket != "" {
+			appConfig.ContainerdSocket = containerdSocket
+		}
+		if appConfig != nil && dbPath != "" {
+			appConfig.DBPath = dbPath
+		}
+		return nil
+	},
 }
 
 // 自定义 Help 函数
@@ -41,4 +64,7 @@ func customHelpFunc(cmd *cobra.Command, args []string) {
 func init() {
 	// 设置自定义的 Help 函数
 	RootCmd.SetHelpFunc(customHelpFunc)
+	RootCmd.PersistentFlags().StringVarP(&backend, "backend", "b", "k8s", "Backend to use: k8s, podman, or containerd")
+	RootCmd.PersistentFlags().StringVar(&containerdSocket, "containerd-socket", "", "Containerd socket path")
+	RootCmd.PersistentFlags().StringVar(&dbPath, "db", "", "SQLite database path for state persistence (default: runtime/cluster.db)")
 }

@@ -8,6 +8,7 @@
 # Go build
 .gocache/
 cluster
+cluster-*
 cluster-linux
 *.exe
 *.test
@@ -17,6 +18,11 @@ cluster-linux
 runtime/
 *.db
 *.db-journal
+
+# Testing
+.testcontainers/
+.testhome/
+.xdg/
 
 # Config with secrets
 *.local.yaml
@@ -31,3 +37,7 @@ Thumbs.db
 .claude/settings.local.json
 .claude/worktrees/
 .claude/scheduled_tasks.json
+
+# Vendor
+vendor/
+

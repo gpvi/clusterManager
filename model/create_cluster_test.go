@@ -11,15 +11,15 @@ import (
 func TestCreation(t *testing.T) {
 	requireIntegrationTest(t)
 
-	var err error
-	ctx := context.Background()
-	ctx, err = CreatePodmanConnection(ctx)
+	cfg, err := InitConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
+	cfg.RedisContainerPort = 6379
+
+	ctx := context.Background()
 	clusterName := "myCluster"
-	RedisContainerPort = 6379
-	err = CreateClusterAction(ctx, 3, 2, clusterName)
+	err = CreateClusterAction(ctx, cfg, 3, 2, clusterName)
 	if err != nil {
 		t.Fatal(err)
 	}

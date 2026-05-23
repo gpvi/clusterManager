@@ -3,74 +3,113 @@ package model
 import (
 	"context"
 	"fmt"
-	"redisStudy/utils"
+	"strconv"
+	"strings"
+
+	"redisClusterManager/utils"
 )
 
-func ScaleClusterAction(ctx context.Context, additionalShards int, clusterName string) error {
+func ScaleClusterAction(ctx context.Context, cfg *RuntimeConfig, additionalShards int, clusterName string) error {
 	var err error
-	err = InitConfig()
+
+	nodeManager, err := NewNodeManager(cfg)
 	if err != nil {
-		return err
+		return fmt.Errorf("create node manager fail: %v", err)
 	}
-	// 读取相关配置
-	runtimeConfigPath := ClusterRuntimeConfigPath(clusterName)
+
+	runtimeConfigPath := cfg.ClusterRuntimeConfigPath(clusterName)
 	var configFromFile RedisClusterConfig
 	err = utils.ReadFromYAMLFile(runtimeConfigPath, &configFromFile)
 	if err != nil {
-		return fmt.Errorf("error reading from JSON file: %s", err)
+		return fmt.Errorf("error reading from YAML file: %s", err)
 	}
 	nodesPerShard := configFromFile.EffectiveNodesPerShard()
-	RedisContainerPort = configFromFile.Port
-	println("nodesPerShard:")
-	println(nodesPerShard)
-	// 读取配置结束
+	cfg.RedisContainerPort = configFromFile.Port
+	fmt.Println("nodesPerShard:")
+	fmt.Println(nodesPerShard)
 
-	//集群数据初始化开始
-	clusterManager := NewClusterManager(nodesPerShard)
-	containersManager := clusterManager.containersManager
+	clusterManager := NewClusterManager(nodesPerShard, nodeManager)
 
-	// 容器数据初始化
-	err = containersManager.UpdateAllContainersInfo(ctx)
+	// Register cache invalidator if the caller injected one (in-process mode).
+	if cfg.CacheInvalidator != nil {
+		clusterManager.SetCacheInvalidator(cfg.CacheInvalidator)
+	}
+
+	err = nodeManager.ListPodsByCluster(ctx, clusterName)
 	if err != nil {
 		return err
 	}
 
-	if containersManager.Num == 0 {
-		return fmt.Errorf("Current Containers num is 0,please create cluster first. ")
+	if nodeManager.GetNodeCount() == 0 {
+		return fmt.Errorf("current pods num is 0, please create cluster first: %w", ErrClusterNotFound)
 	}
 
-	// 集群数据初始化/
+	nodes := nodeManager.GetNodes()
 	ClusterNodeIndex := 0
-	for ; ClusterNodeIndex < clusterManager.containersManager.Num; ClusterNodeIndex++ {
-		if containersManager.Nodes[ClusterNodeIndex].ClusterName == clusterName {
+	for ; ClusterNodeIndex < nodeManager.GetNodeCount(); ClusterNodeIndex++ {
+		if nodes[ClusterNodeIndex].ClusterName == clusterName {
 			break
 		}
 	}
-	if ClusterNodeIndex == -1 {
-		return fmt.Errorf("cluster with name %s not found", clusterName)
+	if ClusterNodeIndex >= nodeManager.GetNodeCount() {
+		return fmt.Errorf("cluster with name %s not found: %w", clusterName, ErrClusterNotFound)
 	}
-	err = clusterManager.UpdateAfterMeet(ctx, containersManager.Nodes[ClusterNodeIndex], clusterName)
+	err = clusterManager.UpdateAfterMeet(ctx, nodes[ClusterNodeIndex], clusterName)
 	if err != nil {
-		return fmt.Errorf("init meet Info fail when add shaders %v", err)
+		return fmt.Errorf("init meet Info fail when add shards %v", err)
 	}
-	err = clusterManager.UpdateAfterSetNodeRole(ctx, containersManager.Nodes[ClusterNodeIndex], clusterName)
+	err = clusterManager.UpdateAfterSetNodeRole(ctx, nodes[ClusterNodeIndex], clusterName)
 	if err != nil {
-		return fmt.Errorf("init set node role info  fail when add shader %v", err)
+		return fmt.Errorf("init set node role info fail when add shard %v", err)
 	}
-	err = clusterManager.UpdateSlots(ctx, containersManager.Nodes[ClusterNodeIndex], clusterName)
+	err = clusterManager.UpdateSlots(ctx, nodes[ClusterNodeIndex], clusterName)
 	if err != nil {
-		return fmt.Errorf("init slots info fail when add shader%v", err)
+		return fmt.Errorf("init slots info fail when add shard%v", err)
 	}
-	// 数据初始化结束
-	// 扩容开始
+
+	if additionalShards <= 0 {
+		return fmt.Errorf("additional shards must be greater than 0, got %d", additionalShards)
+	}
 	err = clusterManager.AddShards(ctx, additionalShards, clusterName)
 	if err != nil {
 		return err
 	}
-	fmt.Println("开始迁移slots ...")
+	fmt.Println("starting slot migration...")
 	err = clusterManager.MigratesSlotsToEmptyNode(ctx, clusterName)
 	if err != nil {
 		return err
 	}
+
+	// Persist updated state to SQLite.
+	if cfg.DBPath != "" {
+		if store, serr := OpenStore(cfg.DBPath); serr == nil {
+			defer store.Close()
+			totalShards := len(clusterManager.MasterIDs)
+			store.UpsertCluster(ClusterRecord{
+				Name:          clusterName,
+				Backend:       cfg.Backend,
+				Shards:        totalShards,
+				NodesPerShard: nodesPerShard,
+				RedisPort:     int(cfg.RedisContainerPort),
+				Image:         cfg.ImageName,
+				Status:        "ready",
+			})
+			for _, node := range nodeManager.GetNodes() {
+				if node.ClusterName != clusterName {
+					continue
+				}
+				nodeIdx, _ := strconv.Atoi(strings.TrimPrefix(node.Name, clusterName+"-redis-"))
+				store.UpsertContainer(ContainerRecord{
+					ClusterName: clusterName, Name: node.Name, ContainerID: node.ID,
+					HostIP: node.HostIP, HostPort: int(node.HostPort),
+					ContainerIP: node.ConIp, ContainerPort: int(node.ConPort),
+					NodeIndex: nodeIdx, Status: "running",
+					Hostname: node.Hostname,
+				})
+			}
+			store.LogOperation(clusterName, "scale", fmt.Sprintf("added %d shard(s), total=%d", additionalShards, totalShards), true)
+		}
+	}
+
 	return nil
 }

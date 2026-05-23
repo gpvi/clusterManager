@@ -11,13 +11,14 @@ import (
 func TestDeleteAllAction(t *testing.T) {
 	requireIntegrationTest(t)
 
-	ctx := context.Background()
-	ctxPodman, err := CreatePodmanConnection(ctx)
+	cfg, err := InitConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	ctx := context.Background()
 	clusterName := "myCluster"
-	err = DeleteAllContainers(ctxPodman, clusterName)
+	err = DeleteAllContainers(ctx, cfg, clusterName)
 	if err != nil {
 		t.Fatal(err)
 	}
