@@ -168,7 +168,7 @@ func (c *PodmanNodeManager) CreatePods(ctx context.Context, nodeNum int, cluster
 		}
 		// Only set hostname when DNS is enabled.
 		if c.config.DNSEnabled() {
-			node.Hostname = containerName
+			node.Hostname = c.config.BuildHostname(clusterName, i)
 		}
 		c.AddRuntimeNode(&node)
 	}
@@ -272,7 +272,10 @@ func (c *PodmanNodeManager) ListPodsByCluster(ctx context.Context, clusterName s
 			ClusterName: clusterName,
 		}
 		if c.config.DNSEnabled() {
-			node.Hostname = name
+			// Reconstruct the node index from the container name "{clusterName}-redis-{N}".
+			idxStr := strings.TrimPrefix(name, clusterName+"-redis-")
+			nodeIndex, _ := strconv.Atoi(idxStr)
+			node.Hostname = c.config.BuildHostname(clusterName, nodeIndex)
 		}
 		c.Nodes = append(c.Nodes, node)
 		c.IDToNode[node.ID] = node

@@ -28,6 +28,10 @@ var cacheCmd = &cobra.Command{
   cluster cache --port=8001 --gossip=9001
   cluster cache --port=8002 --gossip=9002 --api --seeds=10.0.1.1:8001`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+			if appConfig != nil && appConfig.Cache != nil && !appConfig.Cache.Enabled {
+				fmt.Println("cache subsystem is disabled (cache.enabled=false in config)")
+				return nil
+			}
 		cfg := buildCacheConfig()
 		fmt.Printf("Starting cache node on gRPC :%d, gossip :%d\n", cfg.Port, cfg.Gossip)
 
