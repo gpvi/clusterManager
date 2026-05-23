@@ -75,8 +75,18 @@ func (s *Store) migrate() error {
 		created_at    TEXT NOT NULL
 	);
 
+	CREATE TABLE IF NOT EXISTS pipeline_runs (
+		id            INTEGER PRIMARY KEY AUTOINCREMENT,
+		pipeline_name TEXT NOT NULL,
+		step_name     TEXT NOT NULL,
+		status        TEXT NOT NULL DEFAULT 'completed',
+		created_at    TEXT NOT NULL,
+		UNIQUE(pipeline_name, step_name)
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_containers_cluster ON containers(cluster_name);
 	CREATE INDEX IF NOT EXISTS idx_operations_cluster ON operations(cluster_name);
+	CREATE INDEX IF NOT EXISTS idx_pipeline_runs_name ON pipeline_runs(pipeline_name);
 	`
 	_, err := s.db.Exec(schema)
 	if err != nil {
@@ -259,4 +269,41 @@ func (s *Store) ListOperations(clusterName string) ([]map[string]string, error) 
 		res = append(res, map[string]string{"operation": op, "detail": detail, "success": fmt.Sprintf("%v", success == 1), "created_at": ts})
 	}
 	return res, nil
+}
+
+// SavePipelineStep records a completed pipeline step.
+func (s *Store) SavePipelineStep(pipelineName, stepName string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := s.db.Exec(
+		`INSERT OR REPLACE INTO pipeline_runs (pipeline_name, step_name, status, created_at) VALUES (?, ?, 'completed', ?)`,
+		pipelineName, stepName, now,
+	)
+	return err
+}
+
+// LoadPipelineSteps returns the names of completed steps for a pipeline.
+func (s *Store) LoadPipelineSteps(pipelineName string) ([]string, error) {
+	rows, err := s.db.Query(
+		`SELECT step_name FROM pipeline_runs WHERE pipeline_name = ? AND status = 'completed'`,
+		pipelineName,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var steps []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		steps = append(steps, name)
+	}
+	return steps, nil
+}
+
+// DeletePipeline removes all step records for a pipeline.
+func (s *Store) DeletePipeline(pipelineName string) error {
+	_, err := s.db.Exec(`DELETE FROM pipeline_runs WHERE pipeline_name = ?`, pipelineName)
+	return err
 }

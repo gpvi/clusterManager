@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"redisClusterManager/cluster/model"
+	"redisClusterManager/cluster/model/pipeline"
 	"redisClusterManager/cluster/model/store"
 	"redisClusterManager/cluster/utils"
 )
@@ -26,87 +27,93 @@ func (c RedisClusterConfig) EffectiveNodesPerShard() int {
 }
 
 func CreateClusterAction(ctx context.Context, cfg *model.RuntimeConfig, shardCount int, nodesPerShard int, clusterName string) error {
-	var err error
-
 	nodeManager, err := model.NewNodeManager(cfg)
 	if err != nil {
 		return fmt.Errorf("create node manager fail: %v", err)
 	}
 	clusterManager := model.NewClusterManager(nodesPerShard, nodeManager)
-
-	// Register cache invalidator if the caller injected one (in-process mode).
 	if cfg.CacheInvalidator != nil {
 		clusterManager.SetCacheInvalidator(cfg.CacheInvalidator)
 	}
 
-	if shardCount <= 0 {
-		return fmt.Errorf("shard count must be greater than 0")
-	}
-	if nodesPerShard < 2 {
-		return fmt.Errorf("nodes per shard must be at least 2")
-	}
-	if clusterName == "" {
-		return fmt.Errorf("cluster name must not be empty")
-	}
-
-	err = nodeManager.ListPodsByCluster(ctx, clusterName)
-	if err != nil {
-		return fmt.Errorf("list cluster pods fail: %v", err)
-	}
-	if nodeManager.HasCluster(clusterName) {
-		return fmt.Errorf("cluster %s already exists with %d pod(s), please delete it before recreating: %w", clusterName, nodeManager.CountByCluster(clusterName), model.ErrClusterExists)
-	}
-
-	defer func() {
-		if err == nil {
-			return
-		}
-		if cleanupErr := nodeManager.DeleteResources(ctx, clusterName); cleanupErr != nil {
-			fmt.Printf("rollback failed for cluster %s: %v\n", clusterName, cleanupErr)
-			return
-		}
-		fmt.Printf("rolled back partially created cluster %s\n", clusterName)
-	}()
-
-	err = clusterManager.Bootstrap(ctx, shardCount, clusterName)
-	if err != nil {
-		return fmt.Errorf("bootstrap cluster fail: %v", err)
-	}
-
-	fmt.Println("Create succeed!")
-
-	clusterStateDir := cfg.ClusterStateDir(clusterName)
-	runtimeConfigPath := cfg.ClusterRuntimeConfigPath(clusterName)
-
-	config := RedisClusterConfig{
-		NodesPerShard: clusterManager.NodesPerShard,
-		Port:          cfg.RedisContainerPort,
-	}
-
-	if err := os.MkdirAll(clusterStateDir, 0755); err != nil {
-		return fmt.Errorf("error creating state dir: %v", err)
-	}
-
-	if utils.FileExists(runtimeConfigPath) {
-		fmt.Printf("File %s already exists, deleting...\n", runtimeConfigPath)
-		err := os.Remove(runtimeConfigPath)
-		if err != nil {
-			return fmt.Errorf("error deleting file: %s", err)
-		}
-	}
-	err = utils.WriteToYAMLFile(runtimeConfigPath, config)
-	if err != nil {
-		return fmt.Errorf("error writing to YAML file %s", err)
-	}
-	err = clusterManager.PrintClusterNodesInfo(ctx)
-	if err != nil {
-		return fmt.Errorf("print cluster nodes Info error :%v", err)
-	}
-
-	// Persist to SQLite if configured.
+	var persister pipeline.Persister
 	if cfg.DBPath != "" {
-		s, serr := store.OpenStore(cfg.DBPath)
-		if serr == nil {
+		if s, err := store.OpenStore(cfg.DBPath); err == nil {
+			persister = s
+		}
+	}
+	p := pipeline.New("create-cluster-"+clusterName, persister)
+
+	// Step 1: validate
+	p.Add(pipeline.Step{
+		Name: "validate",
+		Do: func(ctx context.Context) error {
+			if shardCount <= 0 {
+				return fmt.Errorf("shard count must be greater than 0")
+			}
+			if nodesPerShard < 2 {
+				return fmt.Errorf("nodes per shard must be at least 2")
+			}
+			if clusterName == "" {
+				return fmt.Errorf("cluster name must not be empty")
+			}
+			if err := nodeManager.ListPodsByCluster(ctx, clusterName); err != nil {
+				return fmt.Errorf("list cluster pods fail: %v", err)
+			}
+			if nodeManager.HasCluster(clusterName) {
+				return fmt.Errorf("cluster %s already exists with %d pod(s): %w",
+					clusterName, nodeManager.CountByCluster(clusterName), model.ErrClusterExists)
+			}
+			return nil
+		},
+	})
+
+	// Step 2: create-pods
+	p.Add(pipeline.Step{
+		Name:    "create-pods",
+		Retry:   1,
+		Do: func(ctx context.Context) error {
+			return clusterManager.Bootstrap(ctx, shardCount, clusterName)
+		},
+		Undo: func(ctx context.Context) error {
+			return nodeManager.DeleteResources(ctx, clusterName)
+		},
+	})
+
+	// Step 3: persist-config — save runtime YAML
+	p.Add(pipeline.Step{
+		Name: "persist-config",
+		Do: func(ctx context.Context) error {
+			dir := cfg.ClusterStateDir(clusterName)
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				return fmt.Errorf("create state dir: %w", err)
+			}
+			runtimePath := cfg.ClusterRuntimeConfigPath(clusterName)
+			if utils.FileExists(runtimePath) {
+				os.Remove(runtimePath)
+			}
+			config := RedisClusterConfig{
+				NodesPerShard: clusterManager.NodesPerShard,
+				Port:          cfg.RedisContainerPort,
+			}
+			return utils.WriteToYAMLFile(runtimePath, config)
+		},
+		Undo: func(ctx context.Context) error {
+			return os.Remove(cfg.ClusterRuntimeConfigPath(clusterName))
+		},
+	})
+
+	// Step 4: persist-db — save to SQLite
+	p.Add(pipeline.Step{
+		Name: "persist-db",
+		Do: func(ctx context.Context) error {
+			if cfg.DBPath == "" {
+				return nil
+			}
+			s, err := store.OpenStore(cfg.DBPath)
+			if err != nil {
+				return err
+			}
 			defer s.Close()
 			s.UpsertCluster(store.ClusterRecord{
 				Name: clusterName, Backend: cfg.Backend, Shards: shardCount,
@@ -126,9 +133,35 @@ func CreateClusterAction(ctx context.Context, cfg *model.RuntimeConfig, shardCou
 					Hostname: node.Hostname,
 				})
 			}
-			s.LogOperation(clusterName, "create", fmt.Sprintf("shards=%d nodes_per_shard=%d", shardCount, nodesPerShard), true)
-		}
-	}
+			s.LogOperation(clusterName, "create",
+				fmt.Sprintf("shards=%d nodes_per_shard=%d", shardCount, nodesPerShard), true)
+			return nil
+		},
+		Undo: func(ctx context.Context) error {
+			if cfg.DBPath == "" {
+				return nil
+			}
+			s, err := store.OpenStore(cfg.DBPath)
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+			s.DeleteCluster(clusterName)
+			return nil
+		},
+	})
 
+	// Step 5: print-info
+	p.Add(pipeline.Step{
+		Name: "print-info",
+		Do: func(ctx context.Context) error {
+			return clusterManager.PrintClusterNodesInfo(ctx)
+		},
+	})
+
+	if err := p.Run(ctx); err != nil {
+		return fmt.Errorf("create cluster %s: %w", clusterName, err)
+	}
+	fmt.Println("Create succeed!")
 	return nil
 }

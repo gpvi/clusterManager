@@ -6,46 +6,79 @@ import (
 	"os"
 
 	"redisClusterManager/cluster/model"
+	"redisClusterManager/cluster/model/pipeline"
 	"redisClusterManager/cluster/model/store"
 	"redisClusterManager/cluster/utils"
 )
 
 func DeleteAllContainers(ctx context.Context, cfg *model.RuntimeConfig, clusterName string) error {
-	var err error
-
 	nodeManager, err := model.NewNodeManager(cfg)
 	if err != nil {
 		return fmt.Errorf("create node manager fail: %v", err)
 	}
 
-	runtimeConfigPath := cfg.ClusterRuntimeConfigPath(clusterName)
-	if utils.FileExists(runtimeConfigPath) {
-		fmt.Printf("File %s already exists, deleting...\n", runtimeConfigPath)
-		err := os.Remove(runtimeConfigPath)
-		if err != nil {
-			return fmt.Errorf("error deleting file: %v", err)
+	var persister pipeline.Persister
+	if cfg.DBPath != "" {
+		if s, err := store.OpenStore(cfg.DBPath); err == nil {
+			persister = s
 		}
 	}
+	p := pipeline.New("delete-cluster-"+clusterName, persister)
 
-	err = nodeManager.DeleteResources(ctx, clusterName)
-	if err != nil {
-		return fmt.Errorf("delete resources fail: %v", err)
-	}
+	// Step 1: delete-resources — remove containers/pods
+	p.Add(pipeline.Step{
+		Name: "delete-resources",
+		Do: func(ctx context.Context) error {
+			// Remove runtime config file first.
+			runtimeConfigPath := cfg.ClusterRuntimeConfigPath(clusterName)
+			if utils.FileExists(runtimeConfigPath) {
+				fmt.Printf("File %s exists, deleting...\n", runtimeConfigPath)
+				if err := os.Remove(runtimeConfigPath); err != nil {
+					return fmt.Errorf("delete config file: %w", err)
+				}
+			}
+			return nodeManager.DeleteResources(ctx, clusterName)
+		},
+		Retry: 2,
+	})
 
-	// Remove from SQLite if configured.
-	if cfg.DBPath != "" {
-		if s, serr := store.OpenStore(cfg.DBPath); serr == nil {
+	// Step 2: persist-db — update SQLite records
+	p.Add(pipeline.Step{
+		Name: "persist-db",
+		Do: func(ctx context.Context) error {
+			if cfg.DBPath == "" {
+				return nil
+			}
+			s, err := store.OpenStore(cfg.DBPath)
+			if err != nil {
+				return err
+			}
 			defer s.Close()
 			s.DeleteCluster(clusterName)
 			s.LogOperation(clusterName, "delete", "removed all containers", true)
-		}
-	}
+			return nil
+		},
+	})
 
-	clusterStateDir := cfg.ClusterStateDir(clusterName)
-	if entries, readErr := os.ReadDir(clusterStateDir); readErr == nil && len(entries) == 0 {
-		if err := os.Remove(clusterStateDir); err != nil {
-			return fmt.Errorf("error deleting cluster state dir: %v", err)
-		}
+	// Step 3: cleanup-state — remove empty state directory
+	p.Add(pipeline.Step{
+		Name: "cleanup-state",
+		Do: func(ctx context.Context) error {
+			dir := cfg.ClusterStateDir(clusterName)
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				return nil // already gone, not an error
+			}
+			if len(entries) == 0 {
+				return os.Remove(dir)
+			}
+			return nil
+		},
+	})
+
+	if err := p.Run(ctx); err != nil {
+		return fmt.Errorf("delete cluster %s: %w", clusterName, err)
 	}
+	fmt.Println("Delete succeed!")
 	return nil
 }
